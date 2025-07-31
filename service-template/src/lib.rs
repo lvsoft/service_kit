@@ -41,7 +41,9 @@ pub async fn run_server() {
 
     // Get the port from the environment or default to 3000.
     let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());
-    let address = format!("127.0.0.1:{}", port);
+    // Get the host from the environment or default to 0.0.0.0 for container-friendly binding.
+    let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let address = format!("{}:{}", host, port);
 
     println!("🚀 Server running at http://{}", address);
     println!("📚 Swagger UI available at http://{}/swagger-ui", address);

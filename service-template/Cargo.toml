@@ -24,6 +24,9 @@ utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
 # TypeScript generation
 ts-rs = "11.0"
 
+# Environment variables
+dotenvy = "0.15"
+
 # By default, TS types are generated in `generated/ts/`.
 # You can override this by adding the following section:
 # [package.metadata.service_kit]

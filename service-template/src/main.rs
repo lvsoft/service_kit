@@ -1,4 +1,5 @@
 use axum::{routing::get, Router};
+use std::env;
 use tokio::net::TcpListener;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -26,12 +27,19 @@ struct ApiDoc;
 
 #[tokio::main]
 async fn main() {
+    // Load environment variables from .env file, if it exists.
+    dotenvy::dotenv().ok();
+    
     let app = api_router();
 
-    println!("🚀 Server running at http://127.0.0.1:3000");
-    println!("📚 Swagger UI available at http://127.0.0.1:3000/swagger-ui");
+    // Get the port from the environment or default to 3000.
+    let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());
+    let address = format!("127.0.0.1:{}", port);
 
-    let listener = TcpListener::bind("127.0.0.1:3000").await.unwrap();
+    println!("🚀 Server running at http://{}", address);
+    println!("📚 Swagger UI available at http://{}/swagger-ui", address);
+
+    let listener = TcpListener::bind(&address).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 

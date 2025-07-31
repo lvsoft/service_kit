@@ -6,12 +6,12 @@ FROM rust:latest as builder
 # This allows us to leverage cargo-chef for efficient dependency caching.
 WORKDIR /app
 RUN cargo new --bin service
-WORKDIR /app/service
 
-# 2. Copy over the manifests and lock file to calculate a dependency plan.
-COPY Cargo.toml Cargo.lock ./
-# For workspaces with path dependencies, you would copy the entire workspace here.
-# COPY ../ ../
+# 2. Copy over the manifests and lock file.
+# This is a key change: We set the WORKDIR to the new crate's root,
+# then copy our *actual* manifests into it, overwriting the template files.
+WORKDIR /app/service
+COPY ./Cargo.toml ./Cargo.lock ./
 
 # 3. Install cargo-chef and calculate the dependency plan.
 # This plan is cached by Docker. As long as Cargo.toml/Cargo.lock don't change,
@@ -25,7 +25,7 @@ RUN cargo chef cook --release --recipe-path ../recipe.json
 
 # 5. Copy the application's source code and build it.
 # This step is relatively fast as all dependencies are already compiled.
-COPY src ./src
+COPY ./src ./src
 RUN cargo build --release --bin {{project-name}}-server
 
 

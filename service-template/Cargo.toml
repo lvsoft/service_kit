@@ -7,7 +7,7 @@ authors = ["{{authors}}"]
 [dependencies]
 # Make sure the path to service_kit is correct for your project structure
 # Or, if published, use: service_kit = { version = "0.1.0" }
-service_kit = { path = "../../service_kit" } 
+service_kit = { path = "../../service_kit/service_kit" } 
 
 # Web framework
 axum = "0.8"

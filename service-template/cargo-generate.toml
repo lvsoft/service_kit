@@ -2,4 +2,4 @@
 cargo_generate_version = ">=0.18.0"
 
 [placeholders]
-authors = { type = "string", prompt = "Who are the authors of this service?" }
+# `project-name` and `authors` are automatically handled by cargo-generate.

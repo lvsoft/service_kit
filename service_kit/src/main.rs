@@ -12,6 +12,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use toml::Value;
 
+// API CLI module (only available when "api-cli" feature is enabled)
+#[cfg(feature = "api-cli")]
+mod api_cli;
+
 /// The main CLI entry point for `cargo forge`.
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A custom build and task runner for projects using service_kit.")]
@@ -45,8 +49,7 @@ fn main() -> Result<()> {
     // Manual dispatch for `api-cli` to ensure raw argument forwarding.
     // This avoids `clap` parsing the arguments meant for the downstream binary.
     if args.get(1).map(|s| s.as_str()) == Some("api-cli") {
-        let api_cli_args = args.into_iter().skip(2).collect();
-        return api_cli(api_cli_args);
+        return api_cli(args.into_iter().skip(2).collect());
     }
 
     // If not `api-cli`, parse with clap for the other commands.
@@ -93,26 +96,24 @@ fn test() -> Result<()> {
     Ok(())
 }
 
-/// Handler for the `api-cli` proxy command.
+/// Handler for the `api-cli` command.
 fn api_cli(args: Vec<String>) -> Result<()> {
-    println!("▶️  Proxying to the service's `api-cli`...");
-    let project_root = get_project_root()?;
-
-    let status = Command::new("cargo")
-        .current_dir(&project_root)
-        .arg("run")
-        .arg("--bin")
-        .arg("api-cli")
-        .arg("--")
-        .args(args)
-        .status()
-        .context("Failed to run the service's `api-cli` binary. Does the service provide it?")?;
-    
-    if !status.success() {
-        anyhow::bail!("`api-cli` command failed.");
+    // 直接调用，但需要确保是在启用了 "api-cli" feature 的情况下编译的
+    #[cfg(feature = "api-cli")]
+    {
+        // 使用 tokio runtime 来运行异步函数
+        let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
+        rt.block_on(async {
+            api_cli::run_with_args(args).await.map_err(|e| anyhow::anyhow!("{}", e))
+        })
     }
 
-    Ok(())
+    #[cfg(not(feature = "api-cli"))]
+    {
+        println!("'api-cli' feature is not enabled.");
+        println!("To enable api-cli functionality, add 'features = [\"api-cli\"]' to your service_kit dependency.");
+        Ok(())
+    }
 }
 
 

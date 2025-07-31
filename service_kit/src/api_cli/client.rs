@@ -1,6 +1,6 @@
-use crate::error::{Error, Result};
+use crate::api_cli::error::{Error, Result};
 use clap::ArgMatches;
-use oas::{OpenAPIV3, Referenceable};
+use oas::OpenAPIV3;
 use reqwest::Client;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -53,7 +53,7 @@ pub async fn execute_request(
 
     if let Some(params) = &operation.parameters {
         for param_ref in params {
-            if let Referenceable::Data(param) = param_ref {
+            if let oas::Referenceable::Data(param) = param_ref {
                 if let Some(value) = matches.get_one::<String>(&param.name) {
                      match param._in {
                         oas::ParameterIn::Path => {
@@ -88,7 +88,7 @@ pub async fn execute_request(
     };
 
     // Only try to access body parameter if the operation defines a request body
-    if let Some(Referenceable::Data(request_body)) = &operation.request_body {
+    if let Some(oas::Referenceable::Data(request_body)) = &operation.request_body {
         if request_body.content.contains_key("application/json") {
             if let Some(body_str) = matches.get_one::<String>("body") {
                 let json_body: Value = serde_json::from_str(body_str)?;

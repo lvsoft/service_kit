@@ -1,7 +1,7 @@
 [workspace]
 members = [
-    "service_kit",
     "examples/product-service",
-    "forge-api-cli",
+    "service_kit",
+    "test-service",
 ]
 resolver = "2"

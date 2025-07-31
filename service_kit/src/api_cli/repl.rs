@@ -1,6 +1,7 @@
-use crate::cli;
-use crate::completer::ClapCompleter;
-
+use crate::api_cli::cli;
+use crate::api_cli::completer::ClapCompleter;
+use crate::api_cli::error::Result;
+use colored::Colorize;
 use nu_ansi_term::{Color, Style};
 use oas::OpenAPIV3;
 use reedline::{
@@ -36,7 +37,7 @@ impl reedline::Prompt for ReplPrompt {
     }
 }
 
-pub async fn start_repl(base_url: &str, spec: &OpenAPIV3) -> crate::error::Result<()> {
+pub async fn start_repl(base_url: &str, spec: &OpenAPIV3) -> Result<()> {
     let command = cli::build_cli_from_spec(spec);
     let completer = ClapCompleter::new(command.clone());
 
@@ -95,7 +96,7 @@ pub async fn start_repl(base_url: &str, spec: &OpenAPIV3) -> crate::error::Resul
                 match command.clone().try_get_matches_from(args) {
                     Ok(matches) => {
                         if let Some((subcommand_name, subcommand_matches)) = matches.subcommand() {
-                            match crate::client::execute_request(
+                            match crate::api_cli::client::execute_request(
                                 base_url,
                                 subcommand_name,
                                 subcommand_matches,

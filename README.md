@@ -56,7 +56,7 @@ Use the `cargo generate` command to create a new project named `my-awesome-servi
 
 ```bash
 # This command clones the service_kit repository from GitHub and uses the service-template directory as the template
-cargo generate --git https://github.com/lvsoft/service_kit.git --subfolder service-template --name my-awesome-service
+cargo generate --git https://github.com/lvsoft/service_kit.git service-template --name my-awesome-service
 ```
 
 ### Step 3: Run the Service

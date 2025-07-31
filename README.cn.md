@@ -55,7 +55,7 @@ cargo install cargo-generate
 
 ```bash
 # 此命令会从 GitHub 克隆 service_kit 仓库，并使用其中的 service-template 目录作为模板
-cargo generate --git https://github.com/lvsoft/service_kit.git --subfolder service-template --name my-awesome-service
+cargo generate --git https://github.com/lvsoft/service_kit.git service-template --name my-awesome-service
 ```
 
 ### 步骤 3: 运行服务

@@ -10,4 +10,9 @@ proc-macro = true
 syn = { version = "2.0", features = ["full", "extra-traits"] }
 quote = "1.0"
 proc-macro2 = "1.0"
-toml = "0.9" # Added for parsing Cargo.toml
+toml = "0.9"
+
+[dev-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+utoipa = { version = "5.4", features = ["axum_extras"] }
+ts-rs = "11.0"

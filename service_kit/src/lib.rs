@@ -22,7 +22,9 @@ use toml::Value;
 /// # Example
 ///
 /// ```ignore
+/// # use service_kit::api_dto;
 /// #[api_dto(rename_all = "snake_case")]
+/// struct SomeDto { id: String }
 /// ```
 #[derive(Debug, Default)]
 struct ApiDtoArgs {
@@ -74,6 +76,7 @@ impl syn::parse::Parse for ApiDtoArgs {
 ///
 /// 1.  **Macro Arguments**: Override the JSON naming convention.
 ///     ```ignore
+///     # use service_kit::api_dto;
 ///     #[api_dto(rename_all = "snake_case")]
 ///     pub struct MyDto { /* ... */ }
 ///     ```

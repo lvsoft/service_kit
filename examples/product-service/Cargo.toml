@@ -1,0 +1,25 @@
+[package]
+name = "product-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+service_kit = { path = "../../service_kit" }
+
+# Web framework
+axum = "0.8"
+tokio = { version = "1.0", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# OpenAPI & Schema
+utoipa = { version = "5.4", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
+
+# TypeScript generation
+ts-rs = "11.0"
+
+[package.metadata.service_kit]
+ts_output_dir = "frontend/src/generated/types/"

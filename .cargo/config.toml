@@ -1,0 +1,2 @@
+[alias]
+forge = "run --package xtask --"

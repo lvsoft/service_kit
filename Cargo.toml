@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "service_kit",
+    "xtask",
+    "examples/product-service",
+]
+resolver = "2"
+

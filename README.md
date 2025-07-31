@@ -1,70 +1,71 @@
-# Service Kit: 一站式 Rust 微服务开发套件
+# Service Kit: An All-in-One Rust Microservice Development Toolkit
 
-`service_kit` 是一个为本项目量身打造的、一站式的 Rust 微服务开发套件。其核心目标是**将最佳实践固化为工具,将重复工作自动化**,从而让开发者能专注于核心业务逻辑的实现。
+[中文文档 (Chinese Document)](README.cn.md)
 
-通过引入 `service_kit`,我们旨在建立一套标准化的微服务开发范式,确保所有服务在 API 规范、代码质量、类型安全和开发流程上保持高度一致。
+`service_kit` is a tailor-made, all-in-one development toolkit for Rust microservices. Its core goal is to **solidify best practices into tools and automate repetitive work**, allowing developers to focus on implementing core business logic.
 
-## 核心组件
+By introducing `service_kit`, we aim to establish a standardized microservice development paradigm, ensuring that all services maintain a high degree of consistency in API specifications, code quality, type safety, and development workflows.
 
-`service_kit` 主要由以下三个核心组件构成:
+## Core Components
 
-### 1. `#[api_dto]` 过程宏
+`service_kit` consists of three main core components:
 
-这是 `service_kit` 的灵魂。开发者只需在数据传输对象(DTO)结构体上添加 `#[api_dto]`,即可自动获得:
+### 1. `#[api_dto]` Procedural Macro
 
-- `serde` 的序列化/反序列化能力 (`Serialize`, `Deserialize`)。
-- `utoipa` 的 OpenAPI Schema 生成能力 (`ToSchema`)。
-- `ts-rs` 的 TypeScript 类型定义生成能力 (`TS`)。
-- 常用的调试和克隆能力 (`Debug`, `Clone`)。
-- **内置的递归问题解决方案**: 自动处理 `Box<Self>` 等递归类型,避免 `utoipa` 编译失败。
-- **灵活的定制能力**: 支持通过 `#[api_dto(rename_all = "..."
-)]` 覆盖命名策略,并通过 `Cargo.toml` 进行全局配置。
+This is the soul of `service_kit`. By simply adding `#[api_dto]` to a Data Transfer Object (DTO) struct, you automatically get:
 
-### 2. `forge_cli` & `forge-api-cli` 集成构建工具
+-   **`serde`** serialization/deserialization capabilities (`Serialize`, `Deserialize`).
+-   **`utoipa`** OpenAPI Schema generation (`ToSchema`).
+-   **`ts-rs`** TypeScript type definition generation (`TS`).
+-   Common debugging and cloning capabilities (`Debug`, `Clone`).
+-   **Built-in solution for recursion**: Automatically handles recursive types like `Box<Self>`, preventing `utoipa` compilation failures.
+-   **Flexible customization**: Supports overriding naming conventions with `#[api_dto(rename_all = "...")]` and global configuration via `Cargo.toml`.
 
-`service_kit` 提供了一套强大的命令行工具来封装开发、测试和交互的完整流程。
+### 2. `forge_cli` & `forge-api-cli` Integrated Build Tools
 
-- **`forge_cli`**: 内置于 `service_kit` 依赖中,通过 `cargo forge` 别名调用,提供构建与质量保障命令:
-    - `cargo forge generate-ts`: 为所有 `#[api_dto]` 结构体生成 TypeScript 类型定义。
-    - `cargo forge lint`: 使用 `cargo clippy` 对项目进行严格的代码质量检查。
-    - `cargo forge test`: 运行项目内的所有单元和集成测试。
-- **`forge-api-cli`**: 一个独立的、动态的 API 客户端,提供与 API 交互的能力。
+`service_kit` provides a powerful suite of command-line tools to encapsulate the entire development, testing, and interaction workflow.
 
-### 3. `service-template` 服务模板
+-   **`forge_cli`**: Built into the `service_kit` dependency and invoked via the `cargo forge` alias, it provides build and quality assurance commands:
+    -   `cargo forge generate-ts`: Generates TypeScript definitions for all `#[api_dto]` structs.
+    -   `cargo forge lint`: Performs strict code quality checks on the project using `cargo clippy`.
+    -   `cargo forge test`: Runs all unit and integration tests within the project.
+-   **`forge-api-cli`**: A standalone, dynamic API client for interacting with your service's API.
 
-一个标准的 `cargo-generator` 模板,允许开发者通过一条命令快速初始化一个全新的、符合 `service_kit` 规范的微服务项目骨架。
+### 3. `service-template` Service Template
+
+A standard `cargo-generator` template that allows developers to quickly initialize a new microservice project skeleton conforming to the `service_kit` specification with a single command.
 
 ---
 
-## 快速上手指南 (Getting Started)
+## Getting Started Guide
 
-本指南将指导你创建并运行你的第一个 `service_kit` 微服务。
+This guide will walk you through creating and running your first `service_kit` microservice.
 
-### 步骤 1: 安装先决条件
+### Step 1: Install Prerequisites
 
-你需要安装 `cargo-generate` 和 `forge-api-cli`。
+You need to install `cargo-generate` and `forge-api-cli`.
 
 ```bash
-# 安装项目模板生成器
+# Install the project template generator
 cargo install cargo-generate
 
-# 安装动态 API 命令行客户端
-# (请确保你已经编译了 forge-api-cli,或者从发布页面下载)
+# Install the dynamic API command-line client
+# (Ensure you have compiled forge-api-cli or downloaded it from a release)
 cargo install --path ./forge-api-cli
 ```
 
-### 步骤 2: 使用模板创建新服务
+### Step 2: Create a New Service from the Template
 
-使用 `cargo generate` 命令,指向本地的 `service-template` 目录来创建一个名为 `my-awesome-service` 的新项目。
+Use the `cargo generate` command, pointing to the local `service-template` directory, to create a new project named `my-awesome-service`.
 
 ```bash
-# 在 service_kit 项目的根目录运行
+# Run this from the root of the service_kit project
 cargo generate --path ./service-template --name my-awesome-service
 ```
 
-### 步骤 3: 运行服务
+### Step 3: Run the Service
 
-进入新创建的项目目录并启动服务。
+Navigate into the newly created project directory and start the service.
 
 ```bash
 cd my-awesome-service
@@ -73,30 +74,30 @@ cargo run
 
 ---
 
-## `forge` 命令演示
+## `forge` Command Demonstration
 
-### `cargo forge` (构建 & 质量)
+### `cargo forge` (Build & Quality)
 
-所有 `cargo forge` 命令都应在**你生成的服务目录**(例如 `my-awesome-service/`)下运行。这些命令由你的项目依赖 `service_kit` 提供。
+All `cargo forge` commands should be run from within **your generated service directory** (e.g., `my-awesome-service/`). These commands are provided by your project's `service_kit` dependency.
 
-- **`cargo forge test`**: 运行项目的所有测试。
-- **`cargo forge lint`**: 对项目进行严格的代码质量检查。
-- **`cargo forge generate-ts`**: 为项目中的 DTO 生成 TypeScript 类型定义。
+-   **`cargo forge test`**: Runs all tests for the project.
+-   **`cargo forge lint`**: Performs strict code quality checks on the project.
+-   **`cargo forge generate-ts`**: Generates TypeScript definitions for the DTOs in your project.
 
-### `forge-api-cli` (API 客户端)
+### `forge-api-cli` (API Client)
 
-这是一个独立的、基于 OpenAPI 规范的交互式 API 客户端。
+This is a standalone, interactive API client based on the OpenAPI specification.
 
-**前置条件**: 确保你的服务正在另一个终端中运行 (`cargo run`)。
+**Prerequisite**: Ensure your service is running in another terminal (`cargo run`).
 
-你可以使用它来调用服务中的 API 端点。它支持两种模式:
+You can use it to call API endpoints in your service. It supports two modes:
 
-#### 1. 直接命令模式
+#### 1. Direct Command Mode
 
-用于快速、一次性的 API 调用。
+For quick, one-off API calls.
 
 ```sh
-# 格式: forge-api-cli <BASE_URL> <API_COMMAND> [OPTIONS]
+# Format: forge-api-cli <BASE_URL> <API_COMMAND> [OPTIONS]
 forge-api-cli http://127.0.0.1:3000 v1.hello.get
 ```
 ```json
@@ -105,16 +106,16 @@ forge-api-cli http://127.0.0.1:3000 v1.hello.get
 }
 ```
 
-#### 2. 交互模式 (REPL)
+#### 2. Interactive Mode (REPL)
 
-只提供 URL 即可进入交互式环境,非常适合 API 的探索和调试。
+By providing only the URL, you can enter an interactive environment, which is ideal for API exploration and debugging.
 
 ```sh
 forge-api-cli http://127.0.0.1:3000
 ```
 ```
-(api-cli) > help  # 显示所有可用的命令
-(api-cli) > v1.hello.get <Tab>  # 自动补全
+(api-cli) > help  # Display all available commands
+(api-cli) > v1.hello.get <Tab>  # Enjoy autocompletion
 (api-cli) > v1.hello.get
 {
   "message": "Hello, World!"
@@ -123,6 +124,6 @@ forge-api-cli http://127.0.0.1:3000
 
 ---
 
-## 示例项目
+## Example Project
 
-本项目包含一个更完整的示例项目,位于 `examples/product-service`。它展示了更复杂的 DTO、递归结构和自定义命名策略的用法,可作为开发的参考。
+This repository includes a more comprehensive example project located at `examples/product-service`. It demonstrates the use of more complex DTOs, recursive structures, and custom naming strategies, serving as a valuable reference for your development.

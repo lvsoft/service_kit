@@ -20,7 +20,7 @@
 - **灵活的定制能力**: 支持通过 `#[api_dto(rename_all = "..."
 )]` 覆盖命名策略,并通过 `Cargo.toml` 进行全局配置。
 
-### 2. `forge_cli` & `forge-api-cli` 集成构建工具
+### 2. `forge_cli` & `forge-cli` 集成构建工具
 
 `service_kit` 提供了一套强大的命令行工具来封装开发、测试和交互的完整流程。
 
@@ -28,7 +28,7 @@
     - `cargo forge generate-ts`: 为所有 `#[api_dto]` 结构体生成 TypeScript 类型定义。
     - `cargo forge lint`: 使用 `cargo clippy` 对项目进行严格的代码质量检查。
     - `cargo forge test`: 运行项目内的所有单元和集成测试。
-- **`forge-api-cli`**: 一个独立的、动态的 API 客户端,提供与 API 交互的能力。
+- **`forge-cli`**: 一个独立的、动态的 API 客户端,提供与 API 交互的能力。
 
 ### 3. `service-template` 服务模板
 
@@ -42,24 +42,20 @@
 
 ### 步骤 1: 安装先决条件
 
-你需要安装 `cargo-generate` 和 `forge-api-cli`。
+你需要安装 `cargo-generate`。
 
 ```bash
 # 安装项目模板生成器
 cargo install cargo-generate
-
-# 安装动态 API 命令行客户端
-# (请确保你已经编译了 forge-api-cli,或者从发布页面下载)
-cargo install --path ./forge-api-cli
 ```
 
 ### 步骤 2: 使用模板创建新服务
 
-使用 `cargo generate` 命令,指向本地的 `service-template` 目录来创建一个名为 `my-awesome-service` 的新项目。
+使用 `cargo generate` 命令，通过 Git 仓库地址来创建一个名为 `my-awesome-service` 的新项目。
 
 ```bash
-# 在 service_kit 项目的根目录运行
-cargo generate --path ./service-template --name my-awesome-service
+# 此命令会从 GitHub 克隆 service_kit 仓库，并使用其中的 service-template 目录作为模板
+cargo generate --git https://github.com/lvsoft/service_kit.git --subfolder service-template --name my-awesome-service
 ```
 
 ### 步骤 3: 运行服务
@@ -83,9 +79,16 @@ cargo run
 - **`cargo forge lint`**: 对项目进行严格的代码质量检查。
 - **`cargo forge generate-ts`**: 为项目中的 DTO 生成 TypeScript 类型定义。
 
-### `forge-api-cli` (API 客户端)
+### `forge-cli` (API 客户端)
 
-这是一个独立的、基于 OpenAPI 规范的交互式 API 客户端。
+`service_kit` 提供了一个名为 `forge-cli` 的二进制程序，它是一个基于 OpenAPI 规范的交互式 API 客户端。
+
+**安装**:
+在 `service_kit` 发布到 crates.io 后, 你可以通过 `cargo install` 来安装它。请注意，需要启用 `api-cli` 功能标志。
+
+```bash
+cargo install service_kit --features api-cli
+```
 
 **前置条件**: 确保你的服务正在另一个终端中运行 (`cargo run`)。
 

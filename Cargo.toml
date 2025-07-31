@@ -2,6 +2,5 @@
 members = [
     "examples/product-service",
     "service_kit",
-    "test-service",
 ]
 resolver = "2"

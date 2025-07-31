@@ -2,6 +2,12 @@
 name = "service_kit"
 version = "0.1.0"
 edition = "2021"
+authors = ["lvsoft"]
+description = "A foundational toolkit for building high-performance, modular services in Rust."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/lvsoft/service_kit"
+readme = "../README.md"
+
 
 [lib]
 proc-macro = true
@@ -45,9 +51,9 @@ toml = "0.9"
 
 [features]
 default = []
-# "cli-support" feature 将启用 forge-cli 二进制文件本身
+# The "cli-support" feature enables the forge-cli binary itself.
 cli-support = ["dep:anyhow", "dep:clap", "dep:walkdir", "dep:fs_extra"]
-# "api-cli" feature 启用完整的 API 客户端逻辑及其所有依赖
+# The "api-cli" feature enables the full API client logic and all its dependencies.
 api-cli = [
     "cli-support", 
     "dep:colored", 

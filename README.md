@@ -21,7 +21,7 @@ This is the soul of `service_kit`. By simply adding `#[api_dto]` to a Data Trans
 -   **Built-in solution for recursion**: Automatically handles recursive types like `Box<Self>`, preventing `utoipa` compilation failures.
 -   **Flexible customization**: Supports overriding naming conventions with `#[api_dto(rename_all = "...")]` and global configuration via `Cargo.toml`.
 
-### 2. `forge_cli` & `forge-api-cli` Integrated Build Tools
+### 2. `forge_cli` & `forge-cli` Integrated Build Tools
 
 `service_kit` provides a powerful suite of command-line tools to encapsulate the entire development, testing, and interaction workflow.
 
@@ -29,7 +29,7 @@ This is the soul of `service_kit`. By simply adding `#[api_dto]` to a Data Trans
     -   `cargo forge generate-ts`: Generates TypeScript definitions for all `#[api_dto]` structs.
     -   `cargo forge lint`: Performs strict code quality checks on the project using `cargo clippy`.
     -   `cargo forge test`: Runs all unit and integration tests within the project.
--   **`forge-api-cli`**: A standalone, dynamic API client for interacting with your service's API.
+-   **`forge-cli`**: A standalone, dynamic API client for interacting with your service's API.
 
 ### 3. `service-template` Service Template
 
@@ -43,24 +43,20 @@ This guide will walk you through creating and running your first `service_kit` m
 
 ### Step 1: Install Prerequisites
 
-You need to install `cargo-generate` and `forge-api-cli`.
+You need to install `cargo-generate`.
 
 ```bash
 # Install the project template generator
 cargo install cargo-generate
-
-# Install the dynamic API command-line client
-# (Ensure you have compiled forge-api-cli or downloaded it from a release)
-cargo install --path ./forge-api-cli
 ```
 
 ### Step 2: Create a New Service from the Template
 
-Use the `cargo generate` command, pointing to the local `service-template` directory, to create a new project named `my-awesome-service`.
+Use the `cargo generate` command to create a new project named `my-awesome-service` from the Git repository.
 
 ```bash
-# Run this from the root of the service_kit project
-cargo generate --path ./service-template --name my-awesome-service
+# This command clones the service_kit repository from GitHub and uses the service-template directory as the template
+cargo generate --git https://github.com/lvsoft/service_kit.git --subfolder service-template --name my-awesome-service
 ```
 
 ### Step 3: Run the Service
@@ -84,9 +80,16 @@ All `cargo forge` commands should be run from within **your generated service di
 -   **`cargo forge lint`**: Performs strict code quality checks on the project.
 -   **`cargo forge generate-ts`**: Generates TypeScript definitions for the DTOs in your project.
 
-### `forge-api-cli` (API Client)
+### `forge-cli` (API Client)
 
-This is a standalone, interactive API client based on the OpenAPI specification.
+`service_kit` provides a binary named `forge-cli`, which is an interactive API client based on the OpenAPI specification.
+
+**Installation**:
+Once `service_kit` is published to crates.io, you can install it using `cargo install`. Note that you need to enable the `api-cli` feature flag.
+
+```bash
+cargo install service_kit --features api-cli
+```
 
 **Prerequisite**: Ensure your service is running in another terminal (`cargo run`).
 

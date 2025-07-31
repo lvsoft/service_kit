@@ -24,7 +24,7 @@ required-features = ["service_kit/api-cli"]
 
 [dependencies]
 service_kit = { version = "0.1.0", features = ["api-cli"] }
-anyhow = "1.0" # Added for the api-cli binary
+anyhow = "1.0"
 
 # Web framework
 axum = "0.8"
@@ -43,3 +43,11 @@ ts-rs = "11.0"
 
 # Environment variables
 dotenvy = "0.15"
+
+# --- For Local Development ---
+# If you are developing `service_kit` locally, uncomment the following lines
+# in your project's `.cargo/config.toml` file (create it if it doesn't exist)
+# to make Cargo use your local version instead of the one from git.
+#
+# [patch.'https://github.com/lvsoft/service_kit']
+# service_kit = { path = "../service_kit" } # Note: Adjust the path if your directory structure is different.

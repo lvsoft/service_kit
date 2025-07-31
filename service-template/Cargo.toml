@@ -16,11 +16,13 @@ path = "src/main.rs"
 name = "openapi-spec-generator"
 path = "src/bin/openapi-spec-generator.rs"
 
+[[bin]]
+name = "api-cli"
+path = "src/bin/api-cli.rs"
 
 [dependencies]
-# Make sure the path to service_kit is correct for your project structure
-# Or, if published, use: service_kit = { version = "0.1.0" }
 service_kit = { path = "../../service_kit/service_kit" } 
+forge-api-cli = { path = "../../forge-api-cli" }
 
 # Web framework
 axum = "0.8"
@@ -39,8 +41,3 @@ ts-rs = "11.0"
 
 # Environment variables
 dotenvy = "0.15"
-
-# By default, TS types are generated in `generated/ts/`.
-# You can override this by adding the following section:
-# [package.metadata.service_kit]
-# ts_output_dir = "frontend/generated/types/"

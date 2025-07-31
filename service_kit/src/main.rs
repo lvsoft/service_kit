@@ -9,7 +9,7 @@ use clap::{Parser, Subcommand};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use toml::Value;
 
 /// The main CLI entry point for `cargo forge`.
@@ -32,22 +32,18 @@ enum Commands {
     /// Runs all unit and integration tests.
     Test,
     
-    /// Generates the OpenAPI specification file.
-    GenerateOpenapiSpec,
-
-    /// Interact with the API using a generated command-line client.
+    /// Proxies commands to the service's dedicated API CLI.
     ///
-    /// This command acts as a wrapper around an OpenAPI client tool (e.g., `oas-cli`).
-    /// It first generates the latest OpenAPI spec, then passes all subsequent
-    /// arguments to the client tool.
-    ///
-    /// You must have an OpenAPI client tool installed and available in your PATH.
-    /// We recommend `oas-cli`: `npm install -g oas-cli`
+    /// This command acts as a proxy to the `api-cli` binary provided by the
+    /// local service. It forwards all arguments, allowing you to interact
+    /// with the dynamic OpenAPI client.
     #[command(external_subcommand)]
     ApiCli(Vec<String>),
 }
 
 fn main() -> Result<()> {
+    // When invoked as `cargo forge`, Cargo passes "forge" as the first argument.
+    // We manually remove it so that `clap` can parse the subcommands correctly.
     let mut args: Vec<String> = env::args().collect();
     if args.get(1).map(|s| s.as_str()) == Some("forge") {
         args.remove(1);
@@ -59,9 +55,6 @@ fn main() -> Result<()> {
         Commands::GenerateTs => generate_ts()?,
         Commands::Lint => lint()?,
         Commands::Test => test()?,
-        Commands::GenerateOpenapiSpec => {
-            generate_openapi_spec()?;
-        }
         Commands::ApiCli(args) => api_cli(args)?,
     }
 
@@ -100,47 +93,23 @@ fn test() -> Result<()> {
     Ok(())
 }
 
-/// Handler for the `generate-openapi-spec` command.
-fn generate_openapi_spec() -> Result<PathBuf> {
-    println!("▶️  Generating OpenAPI specification...");
-
-    let project_root = get_project_root()?;
-    let target_dir = project_root.join("target");
-    let spec_path = target_dir.join("openapi.json");
-    fs::create_dir_all(&target_dir)?;
-
-    let output = Command::new("cargo")
-        .current_dir(&project_root)
-        .args(["run", "--bin", "openapi-spec-generator"])
-        .stdout(Stdio::piped())
-        .spawn()?
-        .wait_with_output()
-        .context("Failed to run openapi-spec-generator binary")?;
-        
-    if !output.status.success() {
-        anyhow::bail!("Failed to generate OpenAPI spec. Error: {}", String::from_utf8_lossy(&output.stderr));
-    }
-
-    fs::write(&spec_path, output.stdout)?;
-    println!("✅ OpenAPI specification generated at: {}", spec_path.display());
-    Ok(spec_path)
-}
-
-/// Handler for the `api-cli` command.
+/// Handler for the `api-cli` proxy command.
 fn api_cli(args: Vec<String>) -> Result<()> {
-    let spec_path = generate_openapi_spec()?;
+    println!("▶️  Proxying to the service's `api-cli`...");
+    let project_root = get_project_root()?;
 
-    let cli_tool = "oas"; // The binary name for `oas-cli`
-    println!("▶️  Invoking `{}` with the generated spec...", cli_tool);
-
-    let status = Command::new(cli_tool)
-        .arg(spec_path)
+    let status = Command::new("cargo")
+        .current_dir(&project_root)
+        .arg("run")
+        .arg("--bin")
+        .arg("api-cli")
+        .arg("--")
         .args(args)
         .status()
-        .context(format!("Failed to execute '{}'. Is it installed and in your PATH? Try `npm install -g oas-cli`", cli_tool))?;
-
+        .context("Failed to run the service's `api-cli` binary. Does the service provide it?")?;
+    
     if !status.success() {
-        anyhow::bail!("API CLI command failed.");
+        anyhow::bail!("`api-cli` command failed.");
     }
 
     Ok(())

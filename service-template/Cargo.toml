@@ -1,0 +1,30 @@
+[package]
+name = "{{project-name}}"
+version = "0.1.0"
+edition = "2021"
+authors = ["{{authors}}"]
+
+[dependencies]
+# Make sure the path to service_kit is correct for your project structure
+# Or, if published, use: service_kit = { version = "0.1.0" }
+service_kit = { path = "../../service_kit" } 
+
+# Web framework
+axum = "0.8"
+tokio = { version = "1.0", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# OpenAPI & Schema
+utoipa = { version = "5.4", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
+
+# TypeScript generation
+ts-rs = "11.0"
+
+# By default, TS types are generated in `generated/ts/`.
+# You can override this by adding the following section:
+# [package.metadata.service_kit]
+# ts_output_dir = "frontend/generated/types/"

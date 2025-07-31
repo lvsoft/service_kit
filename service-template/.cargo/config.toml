@@ -1,0 +1,4 @@
+[alias]
+# This alias allows running the forge cli, provided by the `service_kit` dependency,
+# via `cargo forge`. It works by directly pointing to the dependency's manifest file.
+forge = "run --manifest-path ../../service_kit/service_kit/Cargo.toml --features service_kit/cli --bin forge-cli --"

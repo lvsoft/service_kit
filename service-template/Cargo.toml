@@ -4,6 +4,19 @@ version = "0.1.0"
 edition = "2021"
 authors = ["{{authors}}"]
 
+[lib]
+name = "{{project-name | snake_case}}"
+path = "src/lib.rs"
+
+[[bin]]
+name = "{{project-name}}-server"
+path = "src/main.rs"
+
+[[bin]]
+name = "openapi-spec-generator"
+path = "src/bin/openapi-spec-generator.rs"
+
+
 [dependencies]
 # Make sure the path to service_kit is correct for your project structure
 # Or, if published, use: service_kit = { version = "0.1.0" }

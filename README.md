@@ -21,11 +21,12 @@
 
 ### 2. `forge_cli` 集成构建工具
 
-这是一个通过 `xtask` 模式实现的命令行工具，封装了微服务开发、测试和构建的完整流程。通过 `cargo forge` 调用。
+这是一个内置于 `service_kit` 的命令行工具，封装了微服务开发、测试和构建的完整流程。通过 `cargo forge` 调用。
 
 -   `cargo forge generate-ts`: 扫描项目，为所有 `#[api_dto]` 结构体生成 TypeScript 类型定义。
 -   `cargo forge lint`: 使用 `cargo clippy` 对整个工作区进行严格的代码质量检查。
 -   `cargo forge test`: 运行工作区内的所有单元和集成测试。
+-   `cargo forge api-cli`: **(新功能)** 基于 OpenAPI 规范，提供一个交互式的命令行客户端来测试 API。
 
 ### 3. `service-template` 服务模板
 
@@ -39,10 +40,14 @@
 
 ### 步骤 1: 安装先决条件
 
-你需要安装 `cargo-generate` 来使用项目模板。
+你需要安装 `cargo-generate` 和 `oas-cli`。
 
 ```bash
+# 安装项目模板生成器
 cargo install cargo-generate
+
+# 安装 OpenAPI 命令行客户端 (用于 api-cli 功能)
+npm install -g oas-cli
 ```
 
 ### 步骤 2: 使用模板创建新服务
@@ -53,8 +58,6 @@ cargo install cargo-generate
 # 在 service_kit 项目的根目录运行
 cargo generate --path ./service-template --name my-awesome-service
 ```
-
-`cargo-generate` 会提示你输入作者信息，然后一个全新的服务就会在 `my-awesome-service` 目录中被创建。
 
 ### 步骤 3: 运行服务
 
@@ -68,38 +71,83 @@ cargo run
 服务启动后，你应该能看到类似以下的输出：
 
 ```
-🚀 Server running at http://128.0.0.1:3000
-📚 Swagger UI available at http://128.0.0.1:3000/swagger-ui
+🚀 Server running at http://127.0.0.1:3000
+📚 Swagger UI available at http://127.0.0.1:3000/swagger-ui
 ```
-
-现在，你可以访问 `http://127.0.0.1:3000/swagger-ui` 来查看自动生成的 API 文档。
 
 ---
 
-## 开发工作流
+## `cargo forge` 命令演示
 
-一个典型的开发周期如下：
+所有 `cargo forge` 命令都应在**你生成的服务目录**（例如 `my-awesome-service/`）下运行。
 
-1.  **定义 DTO**: 在 `src/dtos.rs` 中使用 `#[api_dto]` 定义你的数据结构。
+### `cargo forge test`
 
-    ```rust
-    // src/dtos.rs
-    use service_kit::api_dto;
+运行项目的所有测试。
 
-    #[api_dto]
-    pub struct User {
-        pub user_id: String,
-        pub username: String,
-    }
-    ```
+```sh
+$ cargo forge test
+▶️  Running all tests...
+   Finished test [unoptimized + debuginfo] target(s) in ...
+     Running unittests src/lib.rs (...)
+running 0 tests
+...
+✅ All tests passed.
+```
 
-2.  **编写 Handler**: 在 `src/handlers.rs` 中实现你的业务逻辑。
+### `cargo forge lint`
 
-3.  **注册路由**: 在 `src/main.rs` 中将新的 handler 添加到 `axum` 路由和 `#[openapi]` 宏中。
+对项目进行严格的代码质量检查。
 
-4.  **验证与生成**:
-    -   运行 `cargo forge lint` 和 `cargo forge test` 确保代码质量和正确性。
-    -   运行 `cargo forge generate-ts` 来为前端生成最新的 TypeScript 类型。
+```sh
+$ cargo forge lint
+▶️  Running linter...
+   Running 'cargo clippy' with -D warnings...
+    Checking my-awesome-service v0.1.0 (...)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in ...
+✅ All checks passed.
+```
+
+### `cargo forge generate-ts`
+
+为项目中的 DTO 生成 TypeScript 类型定义。
+
+```sh
+$ cargo forge generate-ts
+▶️  Generating TypeScript types by running tests...
+   Finished test [unoptimized + debuginfo] target(s) in ...
+     Running unittests src/lib.rs (...)
+...
+✅ TypeScript types generated successfully.
+   You can find them in: /path/to/my-awesome-service/generated/ts
+```
+
+### `cargo forge api-cli` (API 客户端)
+
+这是一个基于 OpenAPI 规范的交互式 API 客户端。
+
+**前置条件**: 确保你的服务正在另一个终端中运行 (`cargo run`)。
+
+你可以使用它来调用服务中的 API 端点。例如，模板项目包含一个 `GET /v1/hello` 端点：
+
+```sh
+$ cargo forge api-cli v1.hello.get
+▶️  Generating OpenAPI specification...
+✅ OpenAPI specification generated at: /path/to/my-awesome-service/target/openapi.json
+▶️  Invoking `oas` with the generated spec...
+
+{
+  "message": "Hello, World!"
+}
+```
+
+`oas-cli` 会自动将 OpenAPI 路径 (`/v1/hello`) 转换为 CLI 子命令 (`v1.hello.get`)。你可以使用 `--help` 查看所有可用的命令：
+
+```sh
+cargo forge api-cli --help
+```
+
+---
 
 ## 示例项目
 

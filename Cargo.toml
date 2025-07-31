@@ -1,8 +1,6 @@
 [workspace]
 members = [
-    "service_kit",
-    "xtask",
     "examples/product-service",
+    "service_kit",
 ]
 resolver = "2"
-

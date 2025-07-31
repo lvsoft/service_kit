@@ -145,18 +145,16 @@ pub struct UserProfile {
 ### 4.1. 命令详解
 
 -   **`cargo forge test`**
-    -   **功能**: 在 CI/CD 环境中，这是保证 API 质量的核心命令。
+    -   **功能**: 运行项目的所有单元和集成测试。
     -   **执行流程**:
-        1.  执行 `cargo test` 运行所有单元和集成测试。
-        2.  启动一个临时的 `axum` 服务器实例（不监听端口）。
-        3.  调用 `utoipa::openapi::OpenApi::verify(...)`，检查所有 Axum 路由是否与 OpenAPI 声明完全匹配。若不匹配，则测试失败。
+        1.  执行 `cargo test` 运行所有测试。
+    -   **关于契约测试**: `utoipa` v5+ 版本推荐使用外部工具（如 `schemathesis`）进行更全面的基于属性的契约测试，而不是在单元测试中进行简单的路由匹配。为保持 `service_kit` 的简单性，此功能暂不内置，未来可重新评估。
 
 -   **`cargo forge lint`**
     -   **功能**: 执行静态代码质量检查，捍卫项目的类型安全底线。
     -   **执行流程**:
-        1.  运行 `cargo clippy`。
-        2.  运行自定义的静态分析脚本，该脚本会扫描所有被 `#[ApiDto]` 标记的结构体，并检查是否存在类型为 `serde_json::Value` 的字段。
-        3.  **核心设计哲学**: 如果存在 `serde_json::Value` 字段，lint 将**无条件失败**。`service_kit` 的核心使命之一就是提供 100% 的端到端类型安全，杜绝动态类型带来的潜在运行时错误和维护噩梦。我们认为，任何需要动态 JSON 的场景都应通过更明确的结构体或枚举来建模。**此规则不存在豁免机制**。
+        1.  运行 `cargo clippy -- -D warnings`，将所有编译警告视为错误，强制执行高质量代码规范。
+        2.  **隐式强类型保证**: 由于 `#[api_dto]` 宏强制派生 `ts-rs::TS`，任何包含 `ts-rs` 不支持的类型（如 `serde_json::Value`）的 DTO 都会在 `clippy` 检查阶段导致编译失败。这从根本上杜绝了弱类型字段的存在，无需自定义的静态分析脚本。
 
 -   **`cargo forge generate-ts`**
     -   **功能**: 手动触发一次 TypeScript 类型的生成。
@@ -224,3 +222,37 @@ pub struct UserProfile {
     -   `ts-rs`: 用于 TypeScript 类型生成。
     -   `serde`: 用于序列化和反序列化。
     -   `axum`: 作为我们推荐的 Web 框架。
+
+---
+
+## 7. 开发路线图与状态 (Development Roadmap & Status)
+
+### Phase 1: MVP (已完成)
+
+-   [x] **`#[ApiDto]` 核心功能**:
+    -   [x] 自动派生 `serde`, `utoipa`, `ts-rs`, `Debug`, `Clone`。
+    -   [x] 自动注入 `#[serde(rename_all = "camelCase")]` 作为默认命名策略。
+    -   [x] 智能处理递归类型，自动为 `Box<Self>` 或 `Option<Box<Self>>` 添加 `#[schema(value_type = Object)]`。
+-   [x] **`#[ApiDto]` 定制化**:
+    -   [x] 支持通过宏参数覆盖命名策略，例如 `#[ApiDto(rename_all = "snake_case")]`。
+    -   [x] 支持通过 `Cargo.toml` 的 `[package.metadata.service_kit]` 进行全局配置。
+-   [x] **`forge_cli` 工具链**:
+    -   [x] 搭建 `xtask` 基础结构，并通过 `cargo` 别名配置 `cargo forge` 命令。
+    -   [x] 实现 `cargo forge generate-ts`，用于导出 TypeScript 类型定义。
+-   [x] **示例与验证**:
+    -   [x] 搭建 `examples/product-service` 作为功能验证和使用的范例。
+    -   [x] 编写单元测试验证 `camelCase` 和 `snake_case` 的序列化行为。
+
+### Phase 2: 后续计划 (Next Steps)
+
+-   [ ] **完善 `forge_cli` 工具链**:
+    -   [ ] 实现 `cargo forge lint`:
+        -   [ ] 集成 `cargo clippy`。
+        -   [ ] 实现自定义的静态分析，扫描并禁止在 `#[ApiDto]` 结构体中使用 `serde_json::Value`。
+    -   [x] 实现 `cargo forge test`，运行所有单元和集成测试。
+        -   [ ] _(已移除)_ API 契约验证。
+-   [ ] **创建 `cargo-generator` 模板**:
+    -   [ ] 将 `examples/product-service` 提炼并转化为一个标准的 `cargo-generator` 模板。
+-   [ ] **代码质量与文档**:
+    -   [ ] 遵循 `clippy` 建议，修复所有代码中的警告 (例如 `non_snake_case` 等)。
+    -   [ ] 为 `service_kit` 和 `xtask` 中的 `pub` 函数和结构体添加完整的文档注释。

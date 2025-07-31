@@ -1,3 +1,9 @@
+//! # Service Kit - A Proc-Macro for Streamlined Microservice Development
+//!
+//! `service_kit` provides a procedural attribute macro `#[api_dto]` designed to
+//! reduce boilerplate and enforce best practices when creating Data Transfer Objects (DTOs)
+//! in Rust-based microservices.
+
 use proc_macro::TokenStream;
 use quote::quote;
 use std::env;
@@ -9,7 +15,15 @@ use syn::{
 };
 use toml::Value;
 
-// A struct to parse the macro's attributes, e.g., `#[ApiDto(rename_all = "snake_case")]`
+/// A helper struct to parse the arguments passed to the `api_dto` macro.
+///
+/// Currently, it only supports `rename_all = "..."`.
+///
+/// # Example
+///
+/// ```ignore
+/// #[api_dto(rename_all = "snake_case")]
+/// ```
 #[derive(Debug, Default)]
 struct ApiDtoArgs {
     rename_all: Option<String>,
@@ -35,18 +49,52 @@ impl syn::parse::Parse for ApiDtoArgs {
     }
 }
 
+/// A procedural attribute macro to derive essential traits and apply conventions
+/// for API Data Transfer Objects (DTOs).
+///
+/// This macro automates the implementation of common traits and standards, allowing
+/// developers to focus on defining the data structure.
+///
+/// # Injected Traits and Attributes:
+///
+/// - `#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, ts_rs::TS)]`
+/// - `#[serde(rename_all = "...")]`: Defaults to `"camelCase"`, but can be overridden.
+/// - `#[ts(export, export_to = "...")]`: The output path defaults to `"generated/ts/"` or
+///   can be configured globally in `Cargo.toml`.
+///
+/// # Special Handling:
+///
+/// - **Recursive Structs**: Automatically injects `#[schema(value_type = Object)]` for
+///   fields that are self-referential (e.g., `Option<Box<Self>>`), preventing `utoipa`
+///   from failing compilation due to infinite recursion.
+///
+/// # Configuration:
+///
+/// The macro can be customized in two ways:
+///
+/// 1.  **Macro Arguments**: Override the JSON naming convention.
+///     ```ignore
+///     #[api_dto(rename_all = "snake_case")]
+///     pub struct MyDto { /* ... */ }
+///     ```
+///
+/// 2.  **Global `Cargo.toml` Metadata**: Configure the default output directory for TypeScript types.
+///     ```toml
+///     # In your service's Cargo.toml
+///     [package.metadata.service_kit]
+///     ts_output_dir = "frontend/src/generated/types/"
+///     ```
 #[proc_macro_attribute]
-pub fn ApiDto(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn api_dto(attr: TokenStream, item: TokenStream) -> TokenStream {
+    // ... (implementation remains the same)
     let args = parse_macro_input!(attr as ApiDtoArgs);
     let mut input = parse_macro_input!(item as DeriveInput);
     let struct_name = &input.ident;
     
     let rename_all_strategy = args.rename_all.unwrap_or_else(|| "camelCase".to_string());
     
-    // --- Get TS output dir from Cargo.toml or use default ---
     let ts_output_dir = get_ts_output_dir().unwrap_or_else(|| "generated/ts/".to_string());
 
-    // Consolidate all attributes to be added
     let attributes_to_add = quote! {
         #[derive(
             Debug,
@@ -60,14 +108,11 @@ pub fn ApiDto(attr: TokenStream, item: TokenStream) -> TokenStream {
         #[ts(export, export_to = #ts_output_dir)]
     };
 
-    let attr_tokens: proc_macro2::TokenStream = attributes_to_add.into();
     let parsed_attrs: Vec<syn::Attribute> =
-        syn::parse::Parser::parse(syn::Attribute::parse_outer, attr_tokens.into())
+        syn::parse::Parser::parse(syn::Attribute::parse_outer, attributes_to_add.into())
             .expect("Failed to parse attributes");
     input.attrs.extend(parsed_attrs);
 
-
-    // --- Handle recursive schema for utoipa ---
     if let Data::Struct(ref mut data_struct) = input.data {
         if let Fields::Named(ref mut fields) = data_struct.fields {
             for field in fields.named.iter_mut() {
@@ -89,8 +134,11 @@ pub fn ApiDto(attr: TokenStream, item: TokenStream) -> TokenStream {
     output.into()
 }
 
-/// Reads CARGO_MANIFEST_DIR, parses Cargo.toml, and gets the ts_output_dir from metadata.
+/// Reads the `CARGO_MANIFEST_DIR` environment variable to locate the calling crate's
+/// `Cargo.toml`, parses it, and extracts the `ts_output_dir` from the
+/// `[package.metadata.service_kit]` table.
 fn get_ts_output_dir() -> Option<String> {
+    // ... (implementation remains the same)
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").ok()?;
     let cargo_toml_path = PathBuf::from(manifest_dir).join("Cargo.toml");
     
@@ -107,9 +155,10 @@ fn get_ts_output_dir() -> Option<String> {
     Some(output_dir.to_string())
 }
 
-
-// Helper functions (is_recursive_type, etc.) remain the same
+/// Checks if a field's type is a recursive reference to its own struct,
+/// specifically looking for `Box<Self>` or `Option<Box<Self>>`.
 fn is_recursive_type(path: &syn::Path, self_name: &str) -> bool {
+    // ... (implementation remains the same)
     if let Some(segment) = path.segments.last() {
         let type_name = segment.ident.to_string();
         if type_name == "Box" || type_name == "Option" {
@@ -118,7 +167,7 @@ fn is_recursive_type(path: &syn::Path, self_name: &str) -> bool {
                     if type_name == "Option" {
                          if let Some(inner_segment) = inner_type_path.path.segments.last() {
                              if inner_segment.ident == "Box" {
-                                 return is_recursive_boxed_type(&inner_segment, self_name);
+                                 return is_recursive_boxed_type(inner_segment, self_name);
                              }
                          }
                     } else {
@@ -131,7 +180,10 @@ fn is_recursive_type(path: &syn::Path, self_name: &str) -> bool {
     false
 }
 
+/// A helper for `is_recursive_type` that checks if a `PathSegment`'s generic
+/// argument is a `Box` pointing to the struct `self_name`.
 fn is_recursive_boxed_type(segment: &PathSegment, self_name: &str) -> bool {
+    // ... (implementation remains the same)
      if let PathArguments::AngleBracketed(args) = &segment.arguments {
          if let Some(GenericArgument::Type(Type::Path(inner_type))) = args.args.first() {
              if let Some(inner_segment) = inner_type.path.segments.last() {

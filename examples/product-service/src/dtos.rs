@@ -1,6 +1,6 @@
-use service_kit::ApiDto;
+use service_kit::api_dto;
 
-#[ApiDto]
+#[api_dto]
 pub struct Product {
     pub id: String,
     pub product_code: String, // Added for testing camelCase
@@ -10,7 +10,7 @@ pub struct Product {
     pub category: Category,
 }
 
-#[ApiDto]
+#[api_dto]
 #[derive(PartialEq, Eq)] // Example of preserving other derives
 pub struct Category {
     pub id: String,
@@ -20,7 +20,7 @@ pub struct Category {
 }
 
 // For testing snake_case override
-#[ApiDto(rename_all = "snake_case")]
+#[api_dto(rename_all = "snake_case")]
 pub struct LegacyData {
     pub user_id: String,
     pub transaction_amount: f64,

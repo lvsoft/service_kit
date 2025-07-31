@@ -6,7 +6,7 @@ authors = ["lvsoft"]
 description = "A foundational toolkit for building high-performance, modular services in Rust."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/lvsoft/service_kit"
-readme = "../README.md"
+readme = "README.md"
 
 
 [lib]

@@ -3,6 +3,7 @@ name = "{{project-name}}"
 version = "0.1.0"
 edition = "2021"
 authors = ["{{authors}}"]
+default-run = "{{project-name}}-server"
 
 [lib]
 name = "{{project-name | snake_case}}"
@@ -21,8 +22,9 @@ name = "api-cli"
 path = "src/bin/api-cli.rs"
 
 [dependencies]
-service_kit = { path = "../../service_kit/service_kit" } 
-forge-api-cli = { path = "../../forge-api-cli" }
+service_kit = { version = "0.1.0" }
+forge-api-cli = { version = "0.1.0" }
+anyhow = "1.0" # Added for the api-cli binary
 
 # Web framework
 axum = "0.8"

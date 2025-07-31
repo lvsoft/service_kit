@@ -32,30 +32,30 @@ enum Commands {
     /// Runs all unit and integration tests.
     Test,
     
-    /// Proxies commands to the service's dedicated API CLI.
-    ///
-    /// This command acts as a proxy to the `api-cli` binary provided by the
-    /// local service. It forwards all arguments, allowing you to interact
-    /// with the dynamic OpenAPI client.
-    #[command(external_subcommand)]
-    ApiCli(Vec<String>),
+    // Note: `api-cli` is handled manually before clap parsing,
+    // so it doesn't appear here as a regular subcommand.
 }
 
 fn main() -> Result<()> {
-    // When invoked as `cargo forge`, Cargo passes "forge" as the first argument.
-    // We manually remove it so that `clap` can parse the subcommands correctly.
     let mut args: Vec<String> = env::args().collect();
     if args.get(1).map(|s| s.as_str()) == Some("forge") {
         args.remove(1);
     }
     
+    // Manual dispatch for `api-cli` to ensure raw argument forwarding.
+    // This avoids `clap` parsing the arguments meant for the downstream binary.
+    if args.get(1).map(|s| s.as_str()) == Some("api-cli") {
+        let api_cli_args = args.into_iter().skip(2).collect();
+        return api_cli(api_cli_args);
+    }
+
+    // If not `api-cli`, parse with clap for the other commands.
     let cli = Cli::parse_from(args);
 
     match cli.command {
         Commands::GenerateTs => generate_ts()?,
         Commands::Lint => lint()?,
         Commands::Test => test()?,
-        Commands::ApiCli(args) => api_cli(args)?,
     }
 
     Ok(())

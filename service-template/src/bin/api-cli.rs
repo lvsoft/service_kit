@@ -7,5 +7,7 @@
 
 fn main() -> anyhow::Result<()> {
     // Call the main run function from the `forge_api_cli` library.
-    forge_api_cli::run()
+    // The `?` operator handles the conversion from `forge_api_cli::Error` to `anyhow::Error`.
+    forge_api_cli::run()?;
+    Ok(())
 }

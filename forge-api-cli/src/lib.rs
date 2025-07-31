@@ -1,5 +1,4 @@
-use clap::{Arg, Command};
-use std::env;
+use clap::{Parser, Subcommand, CommandFactory};
 use crate::error::Result;
 
 pub mod cli;
@@ -8,67 +7,71 @@ pub mod completer;
 pub mod error;
 pub mod repl;
 
+/// A dynamic, OpenAPI-driven CLI client and REPL.
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    /// The base URL of the service.
+    /// Can also be set via the `API_URL` environment variable.
+    #[arg(short, long, global = true, env = "API_URL")]
+    url: Option<String>, // Make it optional to satisfy clap's rule
+
+    /// The API command to execute.
+    /// If no command is provided, starts an interactive REPL session.
+    #[command(subcommand)]
+    command: Option<ApiCommand>,
+}
+
+/// Holds the external command arguments.
+#[derive(Subcommand, Debug)]
+enum ApiCommand {
+    #[command(external_subcommand)]
+    External(Vec<String>),
+}
+
 /// The main entry point for the `forge-api-cli` library.
-///
-/// This function encapsulates the entire logic of the dynamic API client,
-/// including the two-pass argument parsing, spec fetching, CLI building,
-/// and mode dispatch (direct command vs. REPL).
 #[tokio::main]
 pub async fn run() -> Result<()> {
-    // --- Pass 1: Get the URL ---
-    // The first argument to the binary is expected to be the URL.
-    let url_parser = Command::new("forge-api-cli-launcher")
-        .disable_version_flag(true)
-        .arg(
-            Arg::new("URL")
-                .help("The base URL of the service (e.g., http://127.0.0.1:8080)")
-                .required(false) 
-                .index(1),
-        )
-        .ignore_errors(true);
-        
-    // We parse from `env::args().skip(1)` because when run via `cargo run --bin api-cli`,
-    // the first arg is the binary name, not the URL.
-    let first_pass_matches = url_parser.get_matches_from(env::args().skip(1));
-    let maybe_url = first_pass_matches.get_one::<String>("URL").map(|s| s.clone());
-
-    let (url, spec) = if let Some(url_str) = maybe_url {
-        println!("--> Fetching OpenAPI spec from: {}/api-docs/openapi.json", url_str);
-        let spec = client::fetch_openapi_spec(&url_str).await?;
-        (url_str, spec)
-    } else {
-        // If no URL is provided, show a help message explaining the usage.
-        Command::new("forge-api-cli")
-            .version("0.1.0")
-            .about("A dynamic OpenAPI CLI client.")
-            .long_about("Provide a URL to an OpenAPI spec to generate commands, or run in REPL mode.")
-            .arg(
-                Arg::new("URL")
-                    .help("The base URL of the service (e.g., http://127.0.0.1:8080)")
-                    .required(true)
-                    .index(1),
-            )
-            .print_help()?;
-        return Ok(());
+    // Use clap's derive-based parser for robust argument handling.
+    let cli = Cli::parse();
+    
+    // Manually check for the URL, as it cannot be both `global` and `required`.
+    let url = match cli.url {
+        Some(url) => url,
+        None => {
+            // If no URL was provided via --url or env var, print help and exit.
+            Cli::command().print_help()?;
+            eprintln!("\n\nError: Missing required argument --url <URL> or API_URL environment variable.");
+            return Ok(());
+        }
     };
+    
+    // Fetch the spec based on the provided URL.
+    println!("--> Fetching OpenAPI spec from: {}/api-docs/openapi.json", &url);
+    let spec = client::fetch_openapi_spec(&url).await?;
 
+    // Dynamically build the full CLI with all the API commands from the spec.
     let mut full_cli = cli::build_cli_from_spec(&spec);
 
-    // --- Pass 2: Parse all arguments with the full CLI ---
-    // We skip the binary name and the URL for the second pass.
-    let cli_args: Vec<String> = env::args().skip(2).collect();
-
-    if !cli_args.is_empty() {
-         // Direct command execution
-        let final_matches = full_cli.try_get_matches_from_mut(&cli_args)?;
-         if let Some((subcommand_name, subcommand_matches)) = final_matches.subcommand() {
-            client::execute_request(&url, subcommand_name, subcommand_matches, &spec).await?;
-        } else {
-            full_cli.print_help()?;
+    match cli.command {
+        // Direct command execution mode
+        Some(ApiCommand::External(args)) => {
+            // Prepend the program name to the args for clap parsing
+            let mut full_args = vec!["forge-api-cli".to_string()];
+            full_args.extend(args);
+            
+            let matches = full_cli.try_get_matches_from_mut(&full_args)?;
+            if let Some((subcommand_name, subcommand_matches)) = matches.subcommand() {
+                client::execute_request(&url, subcommand_name, subcommand_matches, &spec).await?;
+            } else {
+                println!("Error: Invalid subcommand provided.\n");
+                full_cli.print_help()?;
+            }
+        },
+        // Interactive (REPL) mode
+        None => {
+            repl::start_repl(&url, &spec).await?;
         }
-    } else {
-        // No subcommands provided, so start the REPL
-        repl::start_repl(&url, &spec).await?;
     }
 
     Ok(())

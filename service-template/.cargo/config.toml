@@ -2,3 +2,13 @@
 # This alias allows running the forge cli, provided by the `service_kit` dependency,
 # via `cargo forge`. It works by directly pointing to the dependency's manifest file.
 forge = "run --manifest-path ../../service_kit/service_kit/Cargo.toml --features service_kit/cli --bin forge-cli --"
+
+# The `[patch]` section is a crucial part of the template.
+# It tells Cargo to use the local versions of `service_kit` and `forge-api-cli`
+# from your filesystem instead of trying to download them from crates.io.
+# This is what makes the template work in a local development environment.
+# When you publish your crates, consumers of the template would remove this
+# section and rely on the versions from crates.io.
+[patch.crates-io]
+service_kit = { path = "../../service_kit/service_kit" }
+forge-api-cli = { path = "../../service_kit/forge-api-cli" }

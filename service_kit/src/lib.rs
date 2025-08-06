@@ -6,14 +6,10 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use std::env;
-use std::fs;
-use std::path::PathBuf;
 use syn::{
     parse_macro_input, punctuated::Punctuated, Data, DeriveInput, Expr, Fields,
     GenericArgument, Lit, Meta, PathArguments, PathSegment, Type,
 };
-use toml::Value;
 
 /// A helper struct to parse the arguments passed to the `api_dto` macro.
 ///
@@ -59,10 +55,8 @@ impl syn::parse::Parse for ApiDtoArgs {
 ///
 /// # Injected Traits and Attributes:
 ///
-/// - `#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, ts_rs::TS)]`
-/// - `#[serde(rename_all = "...")]`: Defaults to `"camelCase"`, but can be overridden.
-/// - `#[ts(export, export_to = "...")]`: The output path defaults to `"generated/ts/"` or
-///   can be configured globally in `Cargo.toml`.
+/// - `#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]`
+/// - `#[serde(rename_all = "...")]`: Defaults to `"camelCase"`, but can be overridden via arguments.
 ///
 /// # Special Handling:
 ///
@@ -80,13 +74,6 @@ impl syn::parse::Parse for ApiDtoArgs {
 ///     #[api_dto(rename_all = "snake_case")]
 ///     pub struct MyDto { /* ... */ }
 ///     ```
-///
-/// 2.  **Global `Cargo.toml` Metadata**: Configure the default output directory for TypeScript types.
-///     ```toml
-///     # In your service's Cargo.toml
-///     [package.metadata.service_kit]
-///     ts_output_dir = "frontend/src/generated/types/"
-///     ```
 #[proc_macro_attribute]
 pub fn api_dto(attr: TokenStream, item: TokenStream) -> TokenStream {
     // ... (implementation remains the same)
@@ -95,8 +82,6 @@ pub fn api_dto(attr: TokenStream, item: TokenStream) -> TokenStream {
     let struct_name = &input.ident;
     
     let rename_all_strategy = args.rename_all.unwrap_or_else(|| "camelCase".to_string());
-    
-    let ts_output_dir = get_ts_output_dir().unwrap_or_else(|| "generated/ts/".to_string());
 
     let attributes_to_add = quote! {
         #[derive(
@@ -104,11 +89,9 @@ pub fn api_dto(attr: TokenStream, item: TokenStream) -> TokenStream {
             Clone,
             serde::Serialize,
             serde::Deserialize,
-            utoipa::ToSchema,
-            ts_rs::TS
+            utoipa::ToSchema
         )]
         #[serde(rename_all = #rename_all_strategy)]
-        #[ts(export, export_to = #ts_output_dir)]
     };
 
     let parsed_attrs: Vec<syn::Attribute> =
@@ -135,27 +118,6 @@ pub fn api_dto(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     output.into()
-}
-
-/// Reads the `CARGO_MANIFEST_DIR` environment variable to locate the calling crate's
-/// `Cargo.toml`, parses it, and extracts the `ts_output_dir` from the
-/// `[package.metadata.service_kit]` table.
-fn get_ts_output_dir() -> Option<String> {
-    // ... (implementation remains the same)
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").ok()?;
-    let cargo_toml_path = PathBuf::from(manifest_dir).join("Cargo.toml");
-    
-    let toml_content = fs::read_to_string(cargo_toml_path).ok()?;
-    let toml_value: Value = toml::from_str(&toml_content).ok()?;
-
-    let output_dir = toml_value
-        .get("package")?
-        .get("metadata")?
-        .get("service_kit")?
-        .get("ts_output_dir")?
-        .as_str()?;
-        
-    Some(output_dir.to_string())
 }
 
 /// Checks if a field's type is a recursive reference to its own struct,

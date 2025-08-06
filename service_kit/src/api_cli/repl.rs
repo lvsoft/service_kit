@@ -1,7 +1,6 @@
 use crate::api_cli::cli;
 use crate::api_cli::completer::ClapCompleter;
 use crate::api_cli::error::Result;
-use colored::Colorize;
 use nu_ansi_term::{Color, Style};
 use oas::OpenAPIV3;
 use reedline::{

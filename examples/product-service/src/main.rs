@@ -39,5 +39,5 @@ async fn main() {
 pub fn api_router() -> Router {
     Router::new()
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        .route("/v1/products/:id", get(handlers::get_product))
+        .route("/v1/products/{id}", get(handlers::get_product))
 }

@@ -9,11 +9,7 @@ pub mod error;
 pub mod repl;
 
 // Re-export the main run function
-pub use lib::run;
 pub use lib::run_with_args;
-
-// Re-export the error type
-pub use error::Result;
 
 // Internal module that contains the main lib.rs content
 mod lib {

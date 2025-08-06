@@ -14,10 +14,6 @@ name = "{{project-name}}-server"
 path = "src/main.rs"
 
 [[bin]]
-name = "openapi-spec-generator"
-path = "src/bin/openapi-spec-generator.rs"
-
-[[bin]]
 name = "api-cli"
 path = "src/bin/api-cli.rs"
 required-features = ["service_kit/api-cli"]
@@ -37,9 +33,6 @@ serde_json = "1.0"
 # OpenAPI & Schema
 utoipa = { version = "5.4", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
-
-# TypeScript generation
-ts-rs = "11.0"
 
 # Environment variables
 dotenvy = "0.15"

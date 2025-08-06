@@ -5,12 +5,10 @@
 //! invoked via a local `cargo forge` alias in the generated service project.
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use std::env;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
-use toml::Value;
 
 // API CLI module (only available when "api-cli" feature is enabled)
 #[cfg(feature = "api-cli")]
@@ -27,25 +25,38 @@ struct Cli {
 /// Defines the available subcommands for `cargo forge`.
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Generates TypeScript type definitions from Rust DTOs.
-    GenerateTs,
-    
+    /// Generates TypeScript type definitions from an OpenAPI specification.
+    GenerateTypes(GenerateTypesArgs),
+
     /// Lints the codebase using `cargo clippy`.
     Lint,
-    
+
     /// Runs all unit and integration tests.
     Test,
-    
+
     // Note: `api-cli` is handled manually before clap parsing,
     // so it doesn't appear here as a regular subcommand.
 }
+
+/// Arguments for the `generate-types` command.
+#[derive(Args, Debug)]
+struct GenerateTypesArgs {
+    /// The path or URL to the OpenAPI v3 specification file.
+    #[arg(short, long)]
+    input: String,
+
+    /// The path to the output TypeScript file.
+    #[arg(short, long)]
+    output: PathBuf,
+}
+
 
 fn main() -> Result<()> {
     let mut args: Vec<String> = env::args().collect();
     if args.get(1).map(|s| s.as_str()) == Some("forge") {
         args.remove(1);
     }
-    
+
     // Manual dispatch for `api-cli` to ensure raw argument forwarding.
     // This avoids `clap` parsing the arguments meant for the downstream binary.
     if args.get(1).map(|s| s.as_str()) == Some("api-cli") {
@@ -56,7 +67,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse_from(args);
 
     match cli.command {
-        Commands::GenerateTs => generate_ts()?,
+        Commands::GenerateTypes(args) => generate_types(args)?,
         Commands::Lint => lint()?,
         Commands::Test => test()?,
     }
@@ -64,20 +75,32 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// Handler for the `generate-ts` command.
-fn generate_ts() -> Result<()> {
-    println!("▶️  Generating TypeScript types by running tests...");
-    run_cargo_command(&["test"], "Failed to run tests for TS generation")?;
+/// Handler for the `generate-types` command.
+fn generate_types(args: GenerateTypesArgs) -> Result<()> {
+    println!("▶️  Generating TypeScript types from OpenAPI spec...");
+    println!("   Input: {}", args.input);
+    println!("   Output: {}", args.output.display());
+
+    let mut command = Command::new("npx");
+    command
+        .arg("openapi-typescript")
+        .arg(&args.input)
+        .arg("--output")
+        .arg(&args.output)
+        .arg("--enum");
+
+    let status = command
+        .status()
+        .context("Failed to execute openapi-typescript. Make sure Node.js, npm, and openapi-typescript are installed and in your PATH.")?;
+
+    if !status.success() {
+        anyhow::bail!("openapi-typescript command failed.");
+    }
     
-    let project_root = get_project_root()?;
-    let ts_output_dir = get_ts_output_dir_from_project(&project_root)
-        .unwrap_or_else(|| project_root.join("generated/ts"));
-
     println!("✅ TypeScript types generated successfully.");
-    println!("   You can find them in: {}", ts_output_dir.display());
-
     Ok(())
 }
+
 
 /// Handler for the `lint` command.
 fn lint() -> Result<()> {
@@ -98,10 +121,10 @@ fn test() -> Result<()> {
 
 /// Handler for the `api-cli` command.
 fn api_cli(args: Vec<String>) -> Result<()> {
-    // 直接调用，但需要确保是在启用了 "api-cli" feature 的情况下编译的
+    // Directly call, but ensure it's compiled with the "api-cli" feature.
     #[cfg(feature = "api-cli")]
     {
-        // 使用 tokio runtime 来运行异步函数
+        // Use tokio runtime to run async function
         let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
         rt.block_on(async {
             api_cli::run_with_args(args).await.map_err(|e| anyhow::anyhow!("{}", e))
@@ -137,18 +160,4 @@ fn run_cargo_command(args: &[&str], error_msg: &'static str) -> Result<()> {
 /// Helper function to locate the root of the current project.
 fn get_project_root() -> Result<PathBuf> {
     env::current_dir().context("Failed to get current directory")
-}
-
-/// Reads the project's `Cargo.toml` and extracts the `ts_output_dir`.
-fn get_ts_output_dir_from_project(project_root: &Path) -> Option<PathBuf> {
-    let cargo_toml_path = project_root.join("Cargo.toml");
-    let toml_content = fs::read_to_string(cargo_toml_path).ok()?;
-    let toml_value: Value = toml::from_str(&toml_content).ok()?;
-    let output_dir_str = toml_value
-        .get("package")?
-        .get("metadata")?
-        .get("service_kit")?
-        .get("ts_output_dir")?
-        .as_str()?;
-    Some(project_root.join(output_dir_str))
 }

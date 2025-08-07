@@ -1,0 +1,290 @@
+use clap::Command;
+
+/// 补全建议结构，不依赖于reedline
+#[derive(Debug, Clone)]
+pub struct CompletionSuggestion {
+    pub value: String,
+    pub description: Option<String>,
+    pub start_pos: usize,
+    pub end_pos: usize,
+}
+
+/// WASM环境下的纯逻辑补全器
+pub struct WasmCompleter {
+    command: Command,
+}
+
+impl WasmCompleter {
+    pub fn new(command: Command) -> Self {
+        Self { command }
+    }
+
+    /// 获取给定行和光标位置的补全建议
+    pub fn complete(&self, line: &str, pos: usize) -> Vec<CompletionSuggestion> {
+        let mut suggestions = Vec::new();
+        let line_to_cursor = &line[..pos];
+
+        let parts: Vec<String> = shlex::split(line_to_cursor)
+            .unwrap_or_else(|| line_to_cursor.split_whitespace().map(String::from).collect());
+
+        let (current_word, span_start) = if line_to_cursor.ends_with(' ') || parts.is_empty() {
+            ("", pos)
+        } else {
+            let last_part = parts.last().expect("Parts should not be empty");
+            (last_part.as_str(), pos - last_part.len())
+        };
+
+        let mut current_cmd = &self.command;
+        let mut last_arg_opt: Option<&clap::Arg> = None;
+        let mut potential_value_completion_context = false;
+
+        // 解析命令路径
+        for (idx, part) in parts.iter().enumerate() {
+            if idx == parts.len() - 1 && !line_to_cursor.ends_with(' ') {
+                if let Some(last_arg) = last_arg_opt {
+                    if last_arg.get_action().takes_values() {
+                        potential_value_completion_context = true;
+                    }
+                }
+                break;
+            }
+
+            if part.starts_with('-') {
+                if let Some(arg_match) = current_cmd.get_arguments().find(|a| {
+                    (a.get_long().map_or(false, |l| format!("--{}", l) == *part)) ||
+                    (a.get_short().map_or(false, |s| format!("-{}", s) == *part))
+                }) {
+                    last_arg_opt = Some(arg_match);
+                    if !arg_match.get_action().takes_values() {
+                        last_arg_opt = None;
+                    }
+                } else {
+                    last_arg_opt = None;
+                    break;
+                }
+            } else {
+                if let Some(prev_arg) = last_arg_opt {
+                    if prev_arg.get_action().takes_values() {
+                        last_arg_opt = None;
+                    }
+                }
+
+                if let Some(sub_cmd) = current_cmd.get_subcommands().find(|sc| sc.get_name() == part) {
+                    current_cmd = sub_cmd;
+                    last_arg_opt = None;
+                } else {
+                    if !last_arg_opt.map_or(false, |arg| arg.get_action().takes_values()) {
+                        break;
+                    }
+                    last_arg_opt = None;
+                }
+            }
+        }
+
+        // 优先级1: 完成参数值
+        if potential_value_completion_context {
+            if let Some(arg_name_part_idx) = parts.len().checked_sub(2) {
+                if let Some(arg_name_part) = parts.get(arg_name_part_idx) {
+                    let path_to_arg_command = &parts[..arg_name_part_idx];
+                    let command_for_arg = get_command_at_path(&self.command, path_to_arg_command);
+
+                    if let Some(clap_arg) = command_for_arg.get_arguments().find(|a| {
+                        a.get_long().map_or(false, |l| format!("--{}", l) == *arg_name_part) ||
+                        a.get_short().map_or(false, |s| format!("-{}", s) == *arg_name_part)
+                    }) {
+                        if clap_arg.get_action().takes_values() {
+                            suggestions.extend(find_value_suggestions(clap_arg, current_word, span_start, pos));
+                        }
+                    }
+                }
+            }
+        }
+
+        // 处理尾随空格的值补全
+        if line_to_cursor.ends_with(' ') && last_arg_opt.map_or(false, |arg| arg.get_action().takes_values()) {
+            if let Some(arg_that_needs_value) = last_arg_opt {
+                suggestions.extend(find_value_suggestions(arg_that_needs_value, "", span_start, pos));
+            }
+        }
+
+        // 如果没有值建议，提供其他类型的补全
+        if suggestions.is_empty() {
+            // 参数补全
+            if current_word.starts_with('-') {
+                suggestions.extend(find_argument_suggestions(current_cmd, current_word, span_start, pos));
+            }
+
+            // 子命令补全
+            suggestions.extend(find_subcommand_suggestions(current_cmd, &[], current_word, span_start, pos));
+
+            // 在尾随空格上的参数建议
+            if line_to_cursor.ends_with(' ') && current_word.is_empty() {
+                let existing_flags: std::collections::HashSet<_> = parts.iter()
+                    .filter(|p| p.starts_with("-"))
+                    .map(|p| p.as_str())
+                    .collect();
+
+                let mut new_arg_suggestions = Vec::new();
+
+                // 长参数
+                let long_args = find_argument_suggestions(current_cmd, "--", span_start, pos)
+                    .into_iter()
+                    .filter(|s| s.value.starts_with("--"));
+
+                for sugg in long_args {
+                    if let Some(arg_def) = current_cmd.get_arguments().find(|a| {
+                        a.get_long().map_or(false, |l| format!("--{}", l) == sugg.value)
+                    }) {
+                        if matches!(*arg_def.get_action(), clap::ArgAction::SetTrue) && existing_flags.contains(sugg.value.as_str()) {
+                            continue;
+                        }
+                    }
+                    new_arg_suggestions.push(sugg);
+                }
+
+                // 短参数
+                let short_args = find_argument_suggestions(current_cmd, "-", span_start, pos)
+                    .into_iter()
+                    .filter(|s| s.value.starts_with('-') && !s.value.starts_with("--"));
+
+                for sugg in short_args {
+                    if let Some(arg_def) = current_cmd.get_arguments().find(|a| {
+                        a.get_short().map_or(false, |s_char| format!("-{}", s_char) == sugg.value)
+                    }) {
+                        if matches!(*arg_def.get_action(), clap::ArgAction::SetTrue) && existing_flags.contains(sugg.value.as_str()) {
+                            continue;
+                        }
+                    }
+                    new_arg_suggestions.push(sugg);
+                }
+                suggestions.extend(new_arg_suggestions);
+            }
+        }
+
+        // 去重
+        let mut final_suggestions = Vec::new();
+        let mut seen_values = std::collections::HashSet::new();
+        for s in suggestions {
+            if seen_values.insert(s.value.clone()) {
+                final_suggestions.push(s);
+            }
+        }
+        final_suggestions
+    }
+}
+
+fn find_subcommand_suggestions(
+    command: &Command,
+    parts: &[String],
+    current_word: &str,
+    span_start: usize,
+    span_end: usize,
+) -> Vec<CompletionSuggestion> {
+    let mut current_cmd = command;
+    let mut suggestions = Vec::new();
+
+    // 遍历子命令路径
+    let relevant_parts_count = if current_word.is_empty() && !parts.is_empty()
+        && parts.last().map_or(false, |p| !p.is_empty()) {
+        parts.len()
+    } else {
+        parts.len().saturating_sub(1)
+    };
+
+    for part in parts.iter().take(relevant_parts_count) {
+        if let Some(sub_cmd) = current_cmd.get_subcommands().find(|sc| sc.get_name() == part) {
+            current_cmd = sub_cmd;
+        } else {
+            return suggestions;
+        }
+    }
+
+    // 查找匹配的子命令
+    for sub_cmd in current_cmd.get_subcommands() {
+        if sub_cmd.get_name().starts_with(current_word) {
+            suggestions.push(CompletionSuggestion {
+                value: sub_cmd.get_name().to_string(),
+                description: sub_cmd.get_about().map(|s| s.to_string()),
+                start_pos: span_start,
+                end_pos: span_end,
+            });
+        }
+    }
+    suggestions
+}
+
+fn find_argument_suggestions(
+    command: &Command,
+    current_word: &str,
+    span_start: usize,
+    span_end: usize,
+) -> Vec<CompletionSuggestion> {
+    let mut suggestions = Vec::new();
+    if !current_word.starts_with('-') {
+        return suggestions;
+    }
+
+    for arg in command.get_arguments() {
+        if let Some(long) = arg.get_long() {
+            let long_flag = format!("--{}", long);
+            if long_flag.starts_with(current_word) {
+                suggestions.push(CompletionSuggestion {
+                    value: long_flag,
+                    description: arg.get_help().map(|s| s.to_string()),
+                    start_pos: span_start,
+                    end_pos: span_end,
+                });
+            }
+        }
+        if let Some(short) = arg.get_short() {
+            let short_flag = format!("-{}", short);
+            if short_flag.starts_with(current_word) {
+                if !suggestions.iter().any(|s| s.value == short_flag) {
+                    suggestions.push(CompletionSuggestion {
+                        value: short_flag,
+                        description: arg.get_help().map(|s| s.to_string()),
+                        start_pos: span_start,
+                        end_pos: span_end,
+                    });
+                }
+            }
+        }
+    }
+    suggestions
+}
+
+fn find_value_suggestions(
+    arg: &clap::Arg,
+    current_word: &str,
+    span_start: usize,
+    span_end: usize,
+) -> Vec<CompletionSuggestion> {
+    let mut suggestions = Vec::new();
+    for pv in arg.get_possible_values() {
+        if pv.get_name().starts_with(current_word) {
+            suggestions.push(CompletionSuggestion {
+                value: pv.get_name().to_string(),
+                description: pv.get_help().map(|s| s.to_string()),
+                start_pos: span_start,
+                end_pos: span_end,
+            });
+        }
+    }
+    suggestions
+}
+
+fn get_command_at_path<'a>(base_cmd: &'a Command, parts: &[String]) -> &'a Command {
+    let mut current_cmd = base_cmd;
+    for part_name in parts {
+        if !part_name.starts_with('-') {
+            if let Some(sub_cmd) = current_cmd.get_subcommands().find(|sc| sc.get_name() == part_name) {
+                current_cmd = sub_cmd;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    current_cmd
+}

@@ -8,6 +8,7 @@ pub mod cli;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod client;
 pub mod error;
+pub mod wasm_completer;
 // `completer` and `repl` are now part of the native CLI.
 
 use clap::{CommandFactory, Parser, Subcommand};

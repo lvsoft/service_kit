@@ -2,9 +2,17 @@ use axum::{routing::get, Router};
 use tokio::net::TcpListener;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
+use rust_embed::RustEmbed;
+use axum_embed::ServeEmbed;
+use tower_http::cors::{CorsLayer, Any};
 
 mod dtos;
 mod handlers;
+
+#[derive(RustEmbed, Clone)]
+#[folder = "../../service_kit/frontend-wasm-cli/"]
+struct Assets;
+
 
 #[derive(OpenApi)]
 #[openapi(
@@ -30,6 +38,8 @@ async fn main() {
 
     println!("🚀 Server running at http://127.0.0.1:3000");
     println!("📚 Swagger UI available at http://127.0.0.1:3000/swagger-ui");
+    println!("💻 Forge CLI UI available at http://127.0.0.1:3000/cli-ui");
+
 
     let listener = TcpListener::bind("127.0.0.1:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
@@ -37,7 +47,16 @@ async fn main() {
 
 /// Constructs the main Axum router for the application.
 pub fn api_router() -> Router {
+    let assets_router = Router::new().nest_service("/cli-ui", ServeEmbed::<Assets>::new());
+
     Router::new()
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .route("/v1/products/{id}", get(handlers::get_product))
+        .merge(assets_router)
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any),
+        )
 }

@@ -2,5 +2,7 @@
 members = [
     "examples/product-service",
     "service_kit",
+    "service_kit/forge-core",
+    "service_kit/forge-cli-wasm",
 ]
 resolver = "2"

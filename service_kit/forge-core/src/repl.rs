@@ -1,11 +1,11 @@
-use crate::api_cli::cli;
-use crate::api_cli::completer::ClapCompleter;
-use crate::api_cli::error::Result;
+use crate::cli;
+use crate::completer::ClapCompleter;
+use crate::error::Result;
 use nu_ansi_term::{Color, Style};
 use oas::OpenAPIV3;
 use reedline::{
     default_emacs_keybindings, ColumnarMenu, Emacs, KeyCode, KeyModifiers, Reedline, ReedlineEvent,
-    ReedlineMenu, Signal, MenuBuilder,
+    ReedlineMenu, Signal,
 };
 use std::borrow::Cow;
 
@@ -95,7 +95,7 @@ pub async fn start_repl(base_url: &str, spec: &OpenAPIV3) -> Result<()> {
                 match command.clone().try_get_matches_from(args) {
                     Ok(matches) => {
                         if let Some((subcommand_name, subcommand_matches)) = matches.subcommand() {
-                            match crate::api_cli::client::execute_request(
+                            match crate::client::execute_request(
                                 base_url,
                                 subcommand_name,
                                 subcommand_matches,

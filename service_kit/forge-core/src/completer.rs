@@ -44,7 +44,6 @@ fn find_subcommand_suggestions(
             suggestions.push(Suggestion {
                 value: sub_cmd.get_name().to_string(),
                 description: sub_cmd.get_about().map(|s| s.to_string()),
-                style: None,
                 extra: None,
                 span: Span::new(span_start, span_end),
                 append_whitespace: true,
@@ -72,7 +71,6 @@ fn find_argument_suggestions(
                 suggestions.push(Suggestion {
                     value: long_flag,
                     description: arg.get_help().map(|s| s.to_string()),
-                    style: None,
                     extra: None,
                     span: Span::new(span_start, span_end),
                     append_whitespace: !arg.get_action().takes_values(),
@@ -86,7 +84,6 @@ fn find_argument_suggestions(
                     suggestions.push(Suggestion {
                         value: short_flag,
                         description: arg.get_help().map(|s| s.to_string()),
-                        style: None,
                         extra: None,
                         span: Span::new(span_start, span_end),
                         append_whitespace: !arg.get_action().takes_values(),
@@ -110,7 +107,6 @@ fn find_value_suggestions(
             suggestions.push(Suggestion {
                 value: pv.get_name().to_string(),
                 description: pv.get_help().map(|s| s.to_string()),
-                style: None,
                 extra: None,
                 span: Span::new(span_start, span_end),
                 append_whitespace: true,

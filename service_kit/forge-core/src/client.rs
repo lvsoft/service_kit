@@ -1,10 +1,17 @@
-use crate::api_cli::error::{Error, Result};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::error::{Error, Result};
+#[cfg(not(target_arch = "wasm32"))]
 use clap::ArgMatches;
+#[cfg(not(target_arch = "wasm32"))]
 use oas::OpenAPIV3;
+#[cfg(not(target_arch = "wasm32"))]
 use reqwest::Client;
+#[cfg(not(target_arch = "wasm32"))]
 use serde_json::Value;
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub async fn fetch_openapi_spec(base_url: &str) -> Result<OpenAPIV3> {
     let spec_url = format!("{}/api-docs/openapi.json", base_url.trim_end_matches('/'));
     println!("--> Fetching OpenAPI spec from: {}", spec_url);
@@ -21,6 +28,7 @@ pub async fn fetch_openapi_spec(base_url: &str) -> Result<OpenAPIV3> {
     Ok(spec)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub async fn execute_request(
     base_url: &str,
     subcommand_name: &str,

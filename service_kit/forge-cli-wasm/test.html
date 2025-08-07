@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>WASM CLI API Test</title>
+</head>
+<body>
+    <h1>WASM CLI API Test</h1>
+    
+    <div>
+        <label>Base URL: <input type="text" id="baseUrl" value="http://localhost:3000" /></label><br><br>
+        <label>Command: <input type="text" id="command" value="v1.hello.get" /></label><br><br>
+        <button onclick="initCli()">Initialize CLI</button>
+        <button onclick="runCommand()">Run Command</button><br><br>
+    </div>
+    
+    <div>
+        <h3>Output:</h3>
+        <pre id="output"></pre>
+    </div>
+
+    <script type="module">
+        import init, { init_cli, run_command_async } from './pkg/forge_cli_wasm.js';
+
+        window.wasmModule = null;
+
+        async function initWasm() {
+            window.wasmModule = await init();
+            console.log('WASM module loaded');
+        }
+
+        // 初始化WASM模块
+        initWasm().catch(console.error);
+
+        // 初始化CLI函数
+        window.initCli = async function() {
+            const baseUrl = document.getElementById('baseUrl').value;
+            const output = document.getElementById('output');
+            
+            try {
+                output.textContent = 'Fetching OpenAPI spec...';
+                
+                // 获取OpenAPI规范
+                const response = await fetch(`${baseUrl}/api-docs/openapi.json`);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch spec: ${response.status}`);
+                }
+                const spec = await response.text();
+                
+                // 初始化CLI，注意这里需要传递base_url参数
+                init_cli(spec, baseUrl);
+                
+                output.textContent = '✅ CLI initialized successfully!';
+            } catch (error) {
+                output.textContent = `❌ Error: ${error.message}`;
+            }
+        };
+
+        // 运行命令函数
+        window.runCommand = async function() {
+            const command = document.getElementById('command').value;
+            const output = document.getElementById('output');
+            
+            try {
+                output.textContent = 'Executing command...';
+                
+                // 使用新的异步函数执行命令
+                const result = await run_command_async(command);
+                
+                output.textContent = result;
+            } catch (error) {
+                output.textContent = `❌ Error: ${error.message}`;
+            }
+        };
+    </script>
+</body>
+</html>

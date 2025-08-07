@@ -1,0 +1,28 @@
+body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    font-family: Menlo, Monaco, 'Courier New', monospace;
+}
+
+h1 {
+    padding: 10px 20px;
+    margin: 0;
+    font-size: 1.2em;
+    border-bottom: 1px solid #333;
+}
+
+#terminal {
+    width: calc(100% - 40px);
+    height: calc(100vh - 80px); /* Adjust based on h1 height */
+    padding: 20px;
+    font-size: 14px; /* Ensure consistent font size */
+    line-height: 1.4; /* Better line spacing */
+}
+
+.xterm .xterm-viewport {
+    width: 100% !important;
+}
+

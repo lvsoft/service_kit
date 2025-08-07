@@ -4,5 +4,6 @@ members = [
     "service_kit",
     "service_kit/forge-core",
     "service_kit/forge-cli-wasm",
+    "service_kit/service-kit-macros",
 ]
 resolver = "2"

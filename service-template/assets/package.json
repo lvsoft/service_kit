@@ -1,0 +1,12 @@
+{
+  "name": "forge-cli-wasm",
+  "version": "0.1.0",
+  "files": [
+    "forge_cli_wasm_bg.wasm",
+    "forge_cli_wasm.js",
+    "forge_cli_wasm.d.ts"
+  ],
+  "module": "forge_cli_wasm.js",
+  "types": "forge_cli_wasm.d.ts",
+  "sideEffects": false
+}

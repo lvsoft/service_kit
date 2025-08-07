@@ -5,7 +5,7 @@
 //! dynamic `clap` command generation, and request execution.
 
 pub mod cli;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "client")]
 pub mod client;
 pub mod error;
 pub mod wasm_completer;
@@ -38,7 +38,7 @@ pub enum ApiCommand {
 
 /// The main entry point for the `forge-api-cli` library.
 /// This function is intended for the native CLI.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "client")]
 #[tokio::main]
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
@@ -47,7 +47,7 @@ pub async fn run() -> Result<()> {
 
 /// Run the API CLI with specific arguments.
 /// This function is also intended for the native CLI.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "client")]
 pub async fn run_with_args(args: Vec<String>) -> Result<()> {
     let mut full_args = vec!["forge-api-cli".to_string()];
     full_args.extend(args);
@@ -59,7 +59,7 @@ pub async fn run_with_args(args: Vec<String>) -> Result<()> {
 /// The core logic that processes parsed CLI arguments.
 /// This is where the REPL vs. Direct Command logic would be,
 /// but since REPL is native-only, it will be handled by the caller (`service_kit`).
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "client")]
 pub async fn run_with_cli_args(cli: Cli) -> Result<()> {
     let url = match cli.url {
         Some(url) => url,

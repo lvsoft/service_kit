@@ -19,12 +19,13 @@ path = "src/bin/api-cli.rs"
 required-features = ["service_kit/api-cli"]
 
 [dependencies]
-service_kit = { version = "0.1.0", features = ["api-cli"] }
+service_kit = { path = "/home/lv/nvm/works/service_kit/service_kit", features = ["api-cli"] }
 anyhow = "1.0"
 
 # Web framework
 axum = "0.8"
 tokio = { version = "1.0", features = ["full"] }
+tower-http = { version = "0.6.6", features = ["cors"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -36,6 +37,14 @@ utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
 
 # Environment variables
 dotenvy = "0.15"
+
+# WASM CLI UI
+rust-embed = "8.7"
+axum-embed = "0.1.0"
+
+[features]
+default = []
+api-cli = ["service_kit/api-cli"]
 
 # --- For Local Development ---
 # If you are developing `service_kit` locally, uncomment the following lines

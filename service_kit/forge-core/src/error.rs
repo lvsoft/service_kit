@@ -4,6 +4,7 @@ use std::io;
 #[derive(Error, Debug)]
 #[allow(dead_code)]
 pub enum Error {
+    #[cfg(feature = "client")]
     #[error("HTTP request failed: {0}")]
     RequestFailed(#[from] reqwest::Error),
 

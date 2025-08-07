@@ -2,18 +2,27 @@ use wasm_bindgen::prelude::*;
 use std::sync::Mutex;
 use once_cell::sync::Lazy;
 use clap::Command;
-use oas::OpenAPIV3;
-use std::collections::VecDeque;
+use oas::{OpenAPIV3, Referenceable};
+use std::collections::{VecDeque, HashMap};
+use serde_json::Value;
 
 // We use a global static variable to hold the initialized CLI command.
 // This is safe in WASM's single-threaded environment.
 static CLI_COMMAND: Lazy<Mutex<Option<Command>>> = Lazy::new(|| Mutex::new(None));
 static SPEC: Lazy<Mutex<Option<OpenAPIV3>>> = Lazy::new(|| Mutex::new(None));
+static BASE_URL: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
 static HISTORY: Lazy<Mutex<VecDeque<String>>> = Lazy::new(|| Mutex::new(VecDeque::new()));
+
+// External bindings to JavaScript fetch API
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console)]
+    fn log(s: &str);
+}
 
 
 #[wasm_bindgen]
-pub fn init_cli(spec_json: &str) -> Result<(), JsValue> {
+pub fn init_cli(spec_json: &str, base_url: &str) -> Result<(), JsValue> {
     // Deserialize the JSON spec.
     let spec: OpenAPIV3 = serde_json::from_str(spec_json)
         .map_err(|e| JsValue::from_str(&format!("Spec Deserialization Error: {}", e)))?;
@@ -21,28 +30,154 @@ pub fn init_cli(spec_json: &str) -> Result<(), JsValue> {
     // Build the clap command from the spec using the core logic.
     let command = forge_core::cli::build_cli_from_spec(&spec);
     
-    // Store the command in our global static variable.
+    // Store the command, spec, and base URL in our global static variables.
     *CLI_COMMAND.lock().unwrap() = Some(command);
     *SPEC.lock().unwrap() = Some(spec);
+    *BASE_URL.lock().unwrap() = Some(base_url.to_string());
 
     Ok(())
 }
 
+// Helper function to execute HTTP requests using JavaScript fetch
+async fn execute_request_wasm(
+    base_url: &str,
+    subcommand_name: &str,
+    matches: &clap::ArgMatches,
+    spec: &OpenAPIV3,
+) -> Result<String, JsValue> {
+    let parts: Vec<&str> = subcommand_name.split('.').collect();
+    let method_str = parts.last().unwrap().to_uppercase();
+    let path_template = format!("/{}", parts[..parts.len() - 1].join("/"));
+
+    let path_item = spec
+        .paths
+        .get(&path_template)
+        .ok_or_else(|| JsValue::from_str(&format!("Path not found for {}", path_template)))?;
+
+    let operation = match method_str.as_str() {
+        "GET" => path_item.get.as_ref(),
+        "POST" => path_item.post.as_ref(),
+        "PUT" => path_item.put.as_ref(),
+        "DELETE" => path_item.delete.as_ref(),
+        "PATCH" => path_item.patch.as_ref(),
+        _ => None,
+    }
+    .ok_or_else(|| JsValue::from_str(&format!("Operation not found for {}", subcommand_name)))?;
+
+    let mut final_path = path_template.clone();
+    let mut query_params = HashMap::new();
+
+    // Process parameters
+    if let Some(params) = &operation.parameters {
+        for param_ref in params {
+            if let Referenceable::Data(param) = param_ref {
+                if let Some(value) = matches.get_one::<String>(&param.name) {
+                    match param._in {
+                        oas::ParameterIn::Path => {
+                            final_path = final_path.replace(&format!("{{{}}}", param.name), value);
+                        }
+                        oas::ParameterIn::Query => {
+                            query_params.insert(param.name.clone(), value.clone());
+                        }
+                        _ => {} // TODO: Handle Header, Cookie
+                    }
+                }
+            }
+        }
+    }
+
+    // Handle OpenAPI server configuration
+    let server_url = if let Some(servers) = &spec.servers {
+        if let Some(first_server) = servers.first() {
+            &first_server.url
+        } else {
+            ""
+        }
+    } else {
+        ""
+    };
+    
+    let mut request_url = format!("{}{}{}", base_url, server_url, final_path);
+    if !query_params.is_empty() {
+        let query_string = serde_urlencoded::to_string(query_params)
+            .map_err(|e| JsValue::from_str(&format!("Query encoding error: {}", e)))?;
+        request_url.push('?');
+        request_url.push_str(&query_string);
+    }
+
+    log(&format!("--> Making {} request to: {}", method_str, request_url));
+
+    // Create fetch request
+    let mut init = web_sys::RequestInit::new();
+    init.set_method(&method_str);
+
+    // Add request body if needed
+    if let Some(Referenceable::Data(request_body)) = &operation.request_body {
+        if request_body.content.contains_key("application/json") {
+            if let Some(body_str) = matches.get_one::<String>("body") {
+                let json_body: Value = serde_json::from_str(body_str)
+                    .map_err(|e| JsValue::from_str(&format!("JSON parse error: {}", e)))?;
+                let body_string = serde_json::to_string(&json_body)
+                    .map_err(|e| JsValue::from_str(&format!("JSON stringify error: {}", e)))?;
+                init.set_body(&JsValue::from_str(&body_string));
+                
+                let headers = web_sys::Headers::new().unwrap();
+                headers.set("Content-Type", "application/json").unwrap();
+                init.set_headers(&headers);
+            }
+        }
+    }
+
+    let request = web_sys::Request::new_with_str_and_init(&request_url, &init)
+        .map_err(|e| JsValue::from_str(&format!("Request creation error: {:?}", e)))?;
+
+    // Get the global window and use fetch from it
+    let window = web_sys::window().unwrap();
+    let resp_value = wasm_bindgen_futures::JsFuture::from(window.fetch_with_request(&request)).await?;
+    let response: web_sys::Response = resp_value.dyn_into().unwrap();
+
+    let status = response.status();
+    log(&format!("<-- Response Status: {}", status));
+
+    let text_promise = response.text()
+        .map_err(|e| JsValue::from_str(&format!("Text conversion error: {:?}", e)))?;
+    
+    let text_value = wasm_bindgen_futures::JsFuture::from(text_promise).await?;
+    let response_body = text_value.as_string().unwrap_or_default();
+
+    // Try to format as JSON if possible
+    if let Ok(json_body) = serde_json::from_str::<Value>(&response_body) {
+        match serde_json::to_string_pretty(&json_body) {
+            Ok(pretty) => Ok(pretty),
+            Err(_) => Ok(response_body),
+        }
+    } else {
+        Ok(response_body)
+    }
+}
+
+// New async version that actually executes API requests
 #[wasm_bindgen]
-pub fn run_command(command_line: &str) -> String {
+pub async fn run_command_async(command_line: &str) -> JsValue {
     let mut cli_command_guard = CLI_COMMAND.lock().unwrap();
     let spec_guard = SPEC.lock().unwrap();
+    let base_url_guard = BASE_URL.lock().unwrap();
     let mut history_guard = HISTORY.lock().unwrap();
 
     // Ensure the CLI has been initialized.
     let cli_command = match &mut *cli_command_guard {
         Some(cmd) => cmd,
-        None => return "Error: CLI not initialized. Call init_cli(spec) first.".to_string(),
+        None => return JsValue::from_str("Error: CLI not initialized. Call init_cli(spec, base_url) first."),
     };
     
-    let _spec = match &*spec_guard {
+    let spec = match &*spec_guard {
         Some(s) => s,
-        None => return "Error: Spec not initialized.".to_string(),
+        None => return JsValue::from_str("Error: Spec not initialized."),
+    };
+
+    let base_url = match &*base_url_guard {
+        Some(url) => url,
+        None => return JsValue::from_str("Error: Base URL not initialized."),
     };
 
     // 添加到历史记录 (只记录非空命令)
@@ -58,7 +193,7 @@ pub fn run_command(command_line: &str) -> String {
     // Parse the command line.
     let args = match shlex::split(command_line) {
         Some(args) => args,
-        None => return "Error: Invalid command line input.".to_string(),
+        None => return JsValue::from_str("Error: Invalid command line input."),
     };
 
     // Prepend a program name for clap.
@@ -69,24 +204,32 @@ pub fn run_command(command_line: &str) -> String {
     let mut clap_cmd = cli_command.clone();
     clap_cmd = clap_cmd.term_width(80); // Set a consistent terminal width
     
-    // Try to get matches. 
+    // Try to get matches and execute the API request
     match clap_cmd.try_get_matches_from(&full_args) {
         Ok(matches) => {
-            // In a real async environment, we'd call `execute_request` here.
-            // For now, we'll just return the matched subcommand for verification.
-            if let Some((subcommand, _)) = matches.subcommand() {
-                format!("Successfully matched command: {}", subcommand)
+            if let Some((subcommand, sub_matches)) = matches.subcommand() {
+                // Actually execute the API request
+                match execute_request_wasm(base_url, subcommand, sub_matches, spec).await {
+                    Ok(response) => JsValue::from_str(&response),
+                    Err(e) => JsValue::from_str(&format!("API request failed: {:?}", e)),
+                }
             } else {
-                "No subcommand was matched.".to_string()
+                JsValue::from_str("No subcommand was matched.")
             }
         },
         Err(e) => {
             // Format the clap error for display in terminal
             let error_str = e.to_string();
             // Ensure proper line endings for terminal display
-            error_str.replace('\n', "\r\n")
+            JsValue::from_str(&error_str.replace('\n', "\r\n"))
         }
     }
+}
+
+// Keep the old synchronous function for backwards compatibility
+#[wasm_bindgen]
+pub fn run_command(_command_line: &str) -> String {
+    "Error: This function is deprecated. Use run_command_async() instead.".to_string()
 }
 
 /// 补全建议的JSON表示（用于与JavaScript交互）

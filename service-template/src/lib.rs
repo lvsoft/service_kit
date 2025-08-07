@@ -3,18 +3,28 @@ use std::env;
 use tokio::net::TcpListener;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
+use rust_embed::RustEmbed;
+use axum_embed::ServeEmbed;
+use tower_http::cors::{CorsLayer, Any};
+
 
 pub mod dtos;
 pub mod handlers;
+
+#[derive(RustEmbed, Clone)]
+#[folder = "assets/"]
+struct Assets;
+
 
 /// The main OpenAPI documentation structure for the service.
 #[derive(OpenApi)]
 #[openapi(
     paths(
         handlers::hello,
+        handlers::add
     ),
     components(
-        schemas(dtos::Greeting)
+        schemas(dtos::Greeting, dtos::AddResponse, dtos::AddParams)
     ),
     tags(
         (name = "{{project-name}}", description = "{{project-name}} API")
@@ -27,9 +37,23 @@ pub struct ApiDoc;
 
 /// Constructs the main Axum router for the application.
 pub fn api_router() -> Router {
+    let assets_router = Router::new().nest_service("/cli-ui", ServeEmbed::<Assets>::new());
+    
+    // API routes with /api prefix to match OpenAPI server definition
+    let api_routes = Router::new()
+        .route("/v1/hello", get(handlers::hello))
+        .route("/v1/add", get(handlers::add));
+
     Router::new()
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        .route("/v1/hello", get(handlers::hello))
+        .nest("/api", api_routes)
+        .merge(assets_router)
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any),
+        )
 }
 
 /// Starts the web server.
@@ -47,6 +71,8 @@ pub async fn run_server() {
 
     println!("🚀 Server running at http://{}", address);
     println!("📚 Swagger UI available at http://{}/swagger-ui", address);
+    println!("💻 Forge CLI UI available at http://{}/cli-ui", address);
+
 
     let listener = TcpListener::bind(&address).await.unwrap();
     axum::serve(listener, app).await.unwrap();

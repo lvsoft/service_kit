@@ -1,5 +1,7 @@
 [template]
-cargo_generate_version = ">=0.18.0"
+cargo_generate_version = ">=0.10.0"
 
-[placeholders]
-# `project-name` and `authors` are automatically handled by cargo-generate.
+# 排除二进制文件以避免模板替换
+exclude = [
+    "assets/forge_cli_wasm_bg.wasm"
+]

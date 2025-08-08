@@ -8,6 +8,8 @@ default = ["client"]
 client = ["reqwest"]
 
 [dependencies]
+axum = "0.8"
+once_cell = "1.19" # Added for lazy static initialization
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive", "env"] }
 oas = "0.1.1"

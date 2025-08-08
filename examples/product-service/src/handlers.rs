@@ -1,19 +1,12 @@
-use axum::{extract::Path, Json};
+use axum::{extract::Path, Json, response::IntoResponse};
+use service_kit_macros::api;
 use crate::dtos::{Product, Category};
 
 /// Get a product by its ID
-#[utoipa::path(
-    get,
-    path = "/v1/products/{id}",
-    params(
-        ("id" = String, Path, description = "Product ID")
-    ),
-    responses(
-        (status = 200, description = "Product found", body = Product),
-        (status = 404, description = "Product not found"),
-    )
-)]
-pub async fn get_product(Path(id): Path<String>) -> Json<Product> {
+///
+/// This endpoint retrieves a specific product from the database using its unique identifier.
+#[api(GET, "/v1/products/{id}")]
+pub async fn get_product(Path(id): Path<String>) -> impl IntoResponse {
     let sample_product = Product {
         id,
         product_code: "P-12345".to_string(), // Added value for the new field

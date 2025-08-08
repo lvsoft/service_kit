@@ -21,9 +21,4 @@
 //!   OpenAPI specification with minimal manual effort.
 //!
 
-// Re-export the procedural macros from the `service-kit-macros` crate.
-pub use service_kit_macros::api_dto;
-pub use service_kit_macros::api_params;
-pub use service_kit_macros::api_route;
-
 // Here, we will later add the ApiDocBuilder and other runtime utilities.

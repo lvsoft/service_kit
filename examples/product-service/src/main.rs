@@ -5,9 +5,13 @@ use utoipa_swagger_ui::SwaggerUi;
 use rust_embed::RustEmbed;
 use axum_embed::ServeEmbed;
 use tower_http::cors::{CorsLayer, Any};
+use rmcp::transport::streamable_http_server::{
+    StreamableHttpService, session::local::LocalSessionManager,
+};
 
 mod dtos;
 mod handlers;
+mod mcp_server;
 
 #[derive(RustEmbed, Clone)]
 #[folder = "../../service_kit/frontend-wasm-cli/"]
@@ -16,9 +20,7 @@ struct Assets;
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(
-        handlers::get_product,
-    ),
+    paths(),
     components(
         schemas(dtos::Product, dtos::Category, dtos::LegacyData)
     ),
@@ -49,9 +51,16 @@ async fn main() {
 pub fn api_router() -> Router {
     let assets_router = Router::new().nest_service("/cli-ui", ServeEmbed::<Assets>::new());
 
+    let mcp_service = StreamableHttpService::new(
+        || Ok(mcp_server::McpServerImpl::new()),
+        LocalSessionManager::default().into(),
+        Default::default(),
+    );
+
     Router::new()
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        .route("/v1/products/{id}", get(handlers::get_product))
+        // .route("/v1/products/{id}", get(handlers::get_product))
+        .nest_service("/mcp", mcp_service)
         .merge(assets_router)
         .layer(
             CorsLayer::new()

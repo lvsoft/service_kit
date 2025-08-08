@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 service_kit = { path = "../../service_kit" }
+forge-core = { path = "../../service_kit/forge-core" }
+service-kit-macros = { path = "../../service_kit/service-kit-macros" }
 
 # Web framework
 axum = "0.8"
@@ -15,14 +17,30 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # OpenAPI & Schema
-utoipa = { version = "5.4", features = ["axum_extras"] }
+utoipa = { version = "5.4", features = ["axum_extras", "openapi_extensions"] }
 utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
+
+# Runtime Registration
+ctor = "0.2.7"
 
 # Asset Embedding
 rust-embed = "8.0"
 axum-embed = "0.1.0"
-tower-http = { version = "0.5", features = ["cors"] }
+tower-http = { version = "0.6.6", features = ["cors"] }
+rmcp = { version = "0.4.0", features = [
+    "server", 
+    "client",
+    "macros",
+    "transport-streamable-http-server",
+    "transport-streamable-http-client",
+    "transport-worker",
+    "reqwest"
+] }
 
+# For MCP client
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [package.metadata.service_kit]
 ts_output_dir = "frontend/src/generated/types/"

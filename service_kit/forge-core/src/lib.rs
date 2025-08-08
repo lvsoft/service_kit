@@ -8,6 +8,7 @@ pub mod cli;
 #[cfg(feature = "client")]
 pub mod client;
 pub mod error;
+pub mod handler;
 pub mod wasm_completer;
 // `completer` and `repl` are now part of the native CLI.
 

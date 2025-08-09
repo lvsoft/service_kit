@@ -1,8 +1,7 @@
-use serde::{Serialize, Deserialize};
-use utoipa::ToSchema;
+use service_kit_macros::api_dto;
 
-#[derive(Serialize, Deserialize, ToSchema, Clone)]
-#[serde(rename_all = "camelCase")]
+/// Represents a product in the system.
+#[api_dto]
 pub struct Product {
     pub id: String,
     pub product_code: String,
@@ -12,18 +11,16 @@ pub struct Product {
     pub category: Category,
 }
 
-#[derive(Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[api_dto]
 pub struct Category {
     pub id: String,
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// A category can have a parent, creating a recursive structure.
     pub parent: Option<Box<Category>>,
 }
 
-// For testing snake_case override
-#[derive(Serialize, Deserialize, ToSchema, Clone)]
-#[serde(rename_all = "snake_case")]
+/// This is a sample DTO with a different naming convention.
+#[api_dto(rename_all = "snake_case")]
 pub struct LegacyData {
     pub user_id: String,
     pub transaction_amount: f64,

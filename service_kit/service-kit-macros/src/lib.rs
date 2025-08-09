@@ -5,7 +5,7 @@ use proc_macro2;
 use quote::{quote};
 use syn::{
     parse::Parse, parse::ParseStream, parse_macro_input, Attribute, Ident, ItemFn, LitStr,
-    Result, Token, Type, Pat,
+    Result, Token, Type, Pat, punctuated::Punctuated
 };
 
 // ... (ApiMacroArgs and other helpers remain the same)
@@ -247,4 +247,109 @@ fn get_inner_type_from_impl_trait<'a>(
         }
     }
     None
+}
+
+// --- `api_dto` and its helpers ---
+
+#[derive(Debug, Default)]
+struct ApiDtoArgs {
+    rename_all: Option<String>,
+}
+
+impl syn::parse::Parse for ApiDtoArgs {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let mut args = ApiDtoArgs::default();
+        let meta_list = Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated(input)?;
+
+        for meta in meta_list {
+            if let syn::Meta::NameValue(nv) = meta {
+                if nv.path.is_ident("rename_all") {
+                    if let syn::Expr::Lit(expr_lit) = nv.value {
+                        if let syn::Lit::Str(lit_str) = expr_lit.lit {
+                            args.rename_all = Some(lit_str.value());
+                        }
+                    }
+                }
+            }
+        }
+        Ok(args)
+    }
+}
+
+#[proc_macro_attribute]
+pub fn api_dto(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(attr as ApiDtoArgs);
+    let mut input = parse_macro_input!(item as syn::DeriveInput);
+    
+    let rename_all_strategy = args.rename_all.unwrap_or_else(|| "camelCase".to_string());
+
+    let attributes_to_add = quote! {
+        #[derive(
+            Debug,
+            Clone,
+            serde::Serialize,
+            serde::Deserialize,
+            utoipa::ToSchema
+        )]
+        #[serde(rename_all = #rename_all_strategy)]
+    };
+
+    let parsed_attrs: Vec<syn::Attribute> =
+        syn::parse::Parser::parse(syn::Attribute::parse_outer, attributes_to_add.into())
+            .expect("Failed to parse attributes");
+    input.attrs.extend(parsed_attrs);
+
+    if let syn::Data::Struct(ref mut data_struct) = input.data {
+        if let syn::Fields::Named(ref mut fields) = data_struct.fields {
+            for field in fields.named.iter_mut() {
+                if let Type::Path(type_path) = &field.ty {
+                    if is_recursive_type(&type_path.path, &input.ident.to_string()) {
+                        field.attrs.push(syn::parse_quote! {
+                            #[schema(value_type = Object)]
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    let output = quote! {
+        #input
+    };
+
+    output.into()
+}
+
+fn is_recursive_type(path: &syn::Path, self_name: &str) -> bool {
+    if let Some(segment) = path.segments.last() {
+        let type_name = segment.ident.to_string();
+        if type_name == "Box" || type_name == "Option" {
+            if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                if let Some(syn::GenericArgument::Type(Type::Path(inner_type_path))) = args.args.first()
+                {
+                    if type_name == "Option" {
+                        if let Some(inner_segment) = inner_type_path.path.segments.last() {
+                            if inner_segment.ident == "Box" {
+                                return is_recursive_boxed_type(inner_segment, self_name);
+                            }
+                        }
+                    } else {
+                        return is_recursive_boxed_type(segment, self_name);
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+fn is_recursive_boxed_type(segment: &syn::PathSegment, self_name: &str) -> bool {
+    if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+        if let Some(syn::GenericArgument::Type(Type::Path(inner_type))) = args.args.first() {
+            if let Some(inner_segment) = inner_type.path.segments.last() {
+                return inner_segment.ident == self_name;
+            }
+        }
+    }
+    false
 }

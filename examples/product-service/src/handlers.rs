@@ -1,6 +1,6 @@
 use axum::{extract::Path, Json, response::IntoResponse};
 use service_kit_macros::api;
-use crate::dtos::{Product, Category};
+use crate::dtos::Product;
 
 /// Get a product by its ID
 ///
@@ -13,7 +13,7 @@ pub async fn get_product(Path(id): Path<String>) -> impl IntoResponse {
         name: "Example Product".to_string(),
         description: Some("This is a product from the mock handler.".to_string()),
         price: 99.99,
-        category: Category {
+        category: crate::dtos::Category {
             id: "cat-01".to_string(),
             name: "Electronics".to_string(),
             parent: None,

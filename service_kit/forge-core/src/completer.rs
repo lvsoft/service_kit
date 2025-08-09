@@ -47,6 +47,7 @@ fn find_subcommand_suggestions(
                 extra: None,
                 span: Span::new(span_start, span_end),
                 append_whitespace: true,
+                style: None,
             });
         }
     }
@@ -74,6 +75,7 @@ fn find_argument_suggestions(
                     extra: None,
                     span: Span::new(span_start, span_end),
                     append_whitespace: !arg.get_action().takes_values(),
+                    style: None,
                 });
             }
         }
@@ -87,6 +89,7 @@ fn find_argument_suggestions(
                         extra: None,
                         span: Span::new(span_start, span_end),
                         append_whitespace: !arg.get_action().takes_values(),
+                        style: None,
                     });
                 }
             }
@@ -110,6 +113,7 @@ fn find_value_suggestions(
                 extra: None,
                 span: Span::new(span_start, span_end),
                 append_whitespace: true,
+                style: None,
             });
         }
     }

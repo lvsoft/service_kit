@@ -5,7 +5,7 @@ use nu_ansi_term::{Color, Style};
 use oas::OpenAPIV3;
 use reedline::{
     default_emacs_keybindings, ColumnarMenu, Emacs, KeyCode, KeyModifiers, Reedline, ReedlineEvent,
-    ReedlineMenu, Signal,
+    ReedlineMenu, Signal, MenuBuilder,
 };
 use std::borrow::Cow;
 

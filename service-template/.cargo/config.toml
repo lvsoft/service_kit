@@ -1,0 +1,7 @@
+[alias]
+# Require `forge-cli` to be installed once: `cargo install service_kit --features api-cli`
+# Then `cargo forge ...` will forward args to the installed `forge-cli` binary.
+forge = "forge-cli --"
+
+[patch.crates-io]
+service_kit = { path = "/home/lv/nvm/works/service_kit/service_kit" }

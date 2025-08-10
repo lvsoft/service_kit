@@ -1,5 +1,5 @@
 use axum::Router;
-use forge_core::{
+use service_kit::{
     ApiDtoMetadata, ApiMetadata, inventory, utoipa::{self, OpenApi},
 };
 use rmcp::transport::streamable_http_server::{
@@ -8,9 +8,7 @@ use rmcp::transport::streamable_http_server::{
 use rust_embed::RustEmbed;
 use std::{collections::HashMap, sync::Arc};
 use tower_http::cors::{Any, CorsLayer};
-use utoipa::openapi::{
-    self, ComponentsBuilder, path::{OperationBuilder, PathItemBuilder, ParameterBuilder, ParameterIn}, Schema, Required,
-};
+use utoipa::openapi::{self};
 use utoipa_swagger_ui::SwaggerUi;
 use axum_embed::ServeEmbed;
 
@@ -26,182 +24,7 @@ mod mcp_server;
 struct Assets;
 
 fn build_openapi_spec() -> utoipa::openapi::OpenApi {
-    let mut openapi = utoipa::openapi::OpenApiBuilder::new()
-        .info(
-            utoipa::openapi::InfoBuilder::new()
-                .title("Product Service API")
-                .version("0.1.0")
-                .description(Some("All endpoints for the product service."))
-                .build(),
-        )
-        .paths(utoipa::openapi::Paths::new())
-        .build();
-
-    // 1. Collect all DTO schemas into a HashMap for easy lookup.
-    let mut schemas: HashMap<String, openapi::RefOr<Schema>> = inventory::iter::<ApiDtoMetadata>
-        .into_iter()
-        .map(|dto| (dto.schema_provider)())
-        .collect();
-
-    // Built-in primitive schemas for common Rust primitives used in Path/Query
-    use utoipa::openapi::schema::{ObjectBuilder, Type};
-    let string_schema = openapi::RefOr::T(Schema::Object(ObjectBuilder::new().schema_type(Type::String).build()));
-    let integer_schema = openapi::RefOr::T(Schema::Object(ObjectBuilder::new().schema_type(Type::Integer).build()));
-    let number_schema = openapi::RefOr::T(Schema::Object(ObjectBuilder::new().schema_type(Type::Number).build()));
-    let boolean_schema = openapi::RefOr::T(Schema::Object(ObjectBuilder::new().schema_type(Type::Boolean).build()));
-    schemas.entry("String".into()).or_insert(string_schema.clone());
-    schemas.entry("&str".into()).or_insert(string_schema.clone());
-    schemas.entry("i32".into()).or_insert(integer_schema.clone());
-    schemas.entry("i64".into()).or_insert(integer_schema.clone());
-    schemas.entry("u32".into()).or_insert(integer_schema.clone());
-    schemas.entry("u64".into()).or_insert(integer_schema.clone());
-    schemas.entry("f32".into()).or_insert(number_schema.clone());
-    schemas.entry("f64".into()).or_insert(number_schema.clone());
-    schemas.entry("bool".into()).or_insert(boolean_schema.clone());
-
-    // 2. Build paths and operations, looking up schemas from the HashMap.
-    for metadata in inventory::iter::<ApiMetadata> {
-        let mut operation_builder = OperationBuilder::new()
-            .operation_id(Some(metadata.operation_id.to_string()))
-            .summary(Some(metadata.summary.to_string()))
-            .description(Some(metadata.description.to_string()))
-            .tag("App");
-
-        // Add parameters
-        for param in metadata.parameters {
-            let schema_ref = schemas
-                .get(param.type_name)
-                .cloned()
-                .unwrap_or_else(|| openapi::RefOr::T(Schema::default()));
-
-            match param.param_in {
-                forge_core::ParamIn::Path => {
-                    let built_parameter = ParameterBuilder::new()
-                        .name(param.name)
-                        .required(Required::True)
-                        .description(Some(param.description))
-                        .parameter_in(ParameterIn::Path)
-                        .schema(Some(schema_ref))
-                        .build();
-                    operation_builder = operation_builder.parameter(built_parameter);
-                }
-                forge_core::ParamIn::Query => {
-                    // If the query parameter is an object, expand its properties as individual query parameters
-                    if let openapi::RefOr::T(Schema::Object(obj)) = &schema_ref {
-                        for (prop_name, prop_schema) in obj.properties.iter() {
-                            let is_required = obj.required.iter().any(|r| r == prop_name);
-                            let built_parameter = ParameterBuilder::new()
-                                .name(prop_name)
-                                .required(if is_required { Required::True } else { Required::False })
-                                .description(None::<&str>)
-                                .parameter_in(ParameterIn::Query)
-                                .schema(Some(prop_schema.clone()))
-                                .build();
-                            operation_builder = operation_builder.parameter(built_parameter);
-                        }
-                        // If object has no properties, fall back to single param
-                        if obj.properties.is_empty() {
-                            let built_parameter = ParameterBuilder::new()
-                                .name(param.name)
-                                .required(if param.required { Required::True } else { Required::False })
-                                .description(Some(param.description))
-                                .parameter_in(ParameterIn::Query)
-                                .schema(Some(schema_ref))
-                                .build();
-                            operation_builder = operation_builder.parameter(built_parameter);
-                        }
-                    } else {
-                        // Primitive query parameter
-                        let built_parameter = ParameterBuilder::new()
-                            .name(param.name)
-                            .required(if param.required { Required::True } else { Required::False })
-                            .description(Some(param.description))
-                            .parameter_in(ParameterIn::Query)
-                            .schema(Some(schema_ref))
-                            .build();
-                        operation_builder = operation_builder.parameter(built_parameter);
-                    }
-                }
-            }
-        }
-
-        // Add request body
-        if let Some(req_body_meta) = metadata.request_body {
-            let schema_ref = schemas
-                .get(req_body_meta.type_name)
-                .cloned()
-                .unwrap_or_else(|| openapi::RefOr::T(Schema::default()));
-                
-            let request_body = utoipa::openapi::request_body::RequestBodyBuilder::new()
-                .description(Some(req_body_meta.description))
-                .required(Some(if req_body_meta.required { Required::True } else { Required::False }))
-                .content(
-                    "application/json",
-                    utoipa::openapi::ContentBuilder::new()
-                        .schema(Some(schema_ref))
-                        .build(),
-                )
-                .build();
-            operation_builder = operation_builder.request_body(Some(request_body));
-        }
-
-        // Add responses
-        let mut responses_builder = utoipa::openapi::ResponsesBuilder::new();
-        for resp in metadata.responses {
-            let mut response_builder = utoipa::openapi::ResponseBuilder::new()
-                .description(resp.description);
-            
-            if let Some(type_name) = resp.type_name {
-                 if let Some(schema_ref) = schemas.get(type_name) {
-                    response_builder = response_builder.content(
-                        "application/json",
-                        utoipa::openapi::ContentBuilder::new().schema(Some(schema_ref.clone())).build()
-                    );
-                 }
-            }
-            
-            responses_builder = responses_builder.response(resp.status_code.to_string(), response_builder.build());
-        }
-        operation_builder = operation_builder.responses(responses_builder.build());
-
-        let http_method = match metadata.method.to_lowercase().as_str() {
-            "get" => utoipa::openapi::path::HttpMethod::Get,
-            "post" => utoipa::openapi::path::HttpMethod::Post,
-            "put" => utoipa::openapi::path::HttpMethod::Put,
-            "delete" => utoipa::openapi::path::HttpMethod::Delete,
-            "patch" => utoipa::openapi::path::HttpMethod::Patch,
-            "options" => utoipa::openapi::path::HttpMethod::Options,
-            "head" => utoipa::openapi::path::HttpMethod::Head,
-            "trace" => utoipa::openapi::path::HttpMethod::Trace,
-            _ => continue, // Or handle error appropriately
-        };
-
-        let operation = operation_builder.build();
-        let path_item = openapi
-            .paths
-            .paths
-            .entry(metadata.path.to_string())
-            .or_default();
-        
-        match http_method {
-            utoipa::openapi::path::HttpMethod::Get => path_item.get = Some(operation),
-            utoipa::openapi::path::HttpMethod::Post => path_item.post = Some(operation),
-            utoipa::openapi::path::HttpMethod::Put => path_item.put = Some(operation),
-            utoipa::openapi::path::HttpMethod::Delete => path_item.delete = Some(operation),
-            utoipa::openapi::path::HttpMethod::Options => path_item.options = Some(operation),
-            utoipa::openapi::path::HttpMethod::Head => path_item.head = Some(operation),
-            utoipa::openapi::path::HttpMethod::Patch => path_item.patch = Some(operation),
-            utoipa::openapi::path::HttpMethod::Trace => path_item.trace = Some(operation),
-        }
-    }
-
-    // 3. Add all collected schemas to the components section.
-    let components = ComponentsBuilder::new()
-        .schemas_from_iter(schemas)
-        .build();
-    openapi.components = Some(components);
-
-    openapi
+    service_kit::openapi_utils::build_openapi_basic("Product Service API", env!("CARGO_PKG_VERSION"), "All endpoints for the product service.", "App")
 }
 
 #[tokio::main]
@@ -220,13 +43,13 @@ async fn main() {
     }
 
     // --- Build REST Router ---
-    let rest_router = forge_core::rest_router_builder::RestRouterBuilder::new()
+    let rest_router = service_kit::rest_router_builder::RestRouterBuilder::new()
         .openapi((*openapi).clone())
         .build()
         .expect("Failed to build REST router");
 
     // --- Build MCP Router ---
-    let mcp_tool_router = forge_core::openapi_to_mcp::OpenApiMcpRouterBuilder::new()
+    let mcp_tool_router = service_kit::openapi_to_mcp::OpenApiMcpRouterBuilder::new()
         .openapi((*openapi).clone())
         .build()
         .expect("Failed to build MCP router");

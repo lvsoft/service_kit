@@ -1,5 +1,5 @@
 use crate::repl::completer::ClapCompleter;
-use forge_core::{
+use service_kit::{
     cli,
     client,
     error::Result,
@@ -10,6 +10,7 @@ use reedline::{
     default_emacs_keybindings, ColumnarMenu, Emacs, KeyCode, KeyModifiers, Reedline, ReedlineEvent,
     ReedlineMenu, Signal,
 };
+use reedline::MenuBuilder; // bring trait into scope for with_name
 use std::borrow::Cow;
 
 pub mod completer;

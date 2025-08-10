@@ -51,9 +51,9 @@ pub fn api(args: TokenStream, input: TokenStream) -> TokenStream {
                         let param_name = inner_pat.ident.to_string();
                         let type_name = type_to_string(inner_type);
                         params_tokens.push(quote! {
-                            ::forge_core::ApiParameter {
+                            ::service_kit::ApiParameter {
                                 name: #param_name,
-                                param_in: ::forge_core::ParamIn::Path,
+                                param_in: ::service_kit::ParamIn::Path,
                                 description: "", // TODO: Parse from attributes
                                 required: true,
                                 type_name: #type_name,
@@ -75,9 +75,9 @@ pub fn api(args: TokenStream, input: TokenStream) -> TokenStream {
                     let param_name = pat_ident.ident.to_string();
                     let type_name = type_to_string(inner_type);
                     params_tokens.push(quote! {
-                        ::forge_core::ApiParameter {
+                        ::service_kit::ApiParameter {
                             name: #param_name,
-                            param_in: ::forge_core::ParamIn::Path,
+                            param_in: ::service_kit::ParamIn::Path,
                             description: "",
                             required: true,
                             type_name: #type_name,
@@ -107,9 +107,9 @@ pub fn api(args: TokenStream, input: TokenStream) -> TokenStream {
                 if let Some(param_name) = param_name_opt {
                     let type_name = type_to_string(inner_type);
                     params_tokens.push(quote! {
-                        ::forge_core::ApiParameter {
+                        ::service_kit::ApiParameter {
                             name: #param_name,
-                            param_in: ::forge_core::ParamIn::Query,
+                            param_in: ::service_kit::ParamIn::Query,
                             description: "", // TODO: Parse from attributes
                             required: true, // TODO: Detect Option
                             type_name: #type_name,
@@ -117,11 +117,11 @@ pub fn api(args: TokenStream, input: TokenStream) -> TokenStream {
                     });
                     // runtime wrapper: deserialize whole params into T
                     let var_ident = format_ident!("{}", param_name);
-                    let inner_ty_tokens = quote! { #inner_type };
+                     let inner_ty_tokens = quote! { #inner_type };
                     arg_prepare_tokens.push(quote! {
                         let #var_ident: #inner_ty_tokens = match serde_json::from_value(params.clone()) {
                             Ok(v) => v,
-                            Err(e) => return Err(::forge_core::error::Error::SerdeJson(e)),
+                             Err(e) => return Err(::service_kit::error::Error::SerdeJson(e)),
                         };
                         let #var_ident = axum::extract::Query::<#inner_ty_tokens>(#var_ident);
                     });
@@ -130,19 +130,19 @@ pub fn api(args: TokenStream, input: TokenStream) -> TokenStream {
             } else if let Some(inner_type) = get_inner_type(&pat_type.ty, "Json") {
                 let type_name = type_to_string(inner_type);
                 request_body_token = quote! {
-                    Some(&::forge_core::ApiRequestBody {
+                    Some(&::service_kit::ApiRequestBody {
                         description: "", // TODO: Parse from attributes
                         required: true,
                         type_name: #type_name,
                     })
                 };
                 // runtime wrapper: deserialize whole params into body T
-                let inner_ty_tokens = quote! { #inner_type };
-                let json_ident = syn::Ident::new("__json_body", proc_macro2::Span::call_site());
+                 let inner_ty_tokens = quote! { #inner_type };
+                 let json_ident = syn::Ident::new("__json_body", proc_macro2::Span::call_site());
                 arg_prepare_tokens.push(quote! {
                     let #json_ident: #inner_ty_tokens = match serde_json::from_value(params.clone()) {
-                        Ok(v) => v,
-                        Err(e) => return Err(::forge_core::error::Error::SerdeJson(e)),
+                         Ok(v) => v,
+                         Err(e) => return Err(::service_kit::error::Error::SerdeJson(e)),
                     };
                     let #json_ident = axum::Json::<#inner_ty_tokens>(#json_ident);
                 });
@@ -157,7 +157,7 @@ pub fn api(args: TokenStream, input: TokenStream) -> TokenStream {
         if let Some(inner_type) = get_inner_type(ty, "Json") {
             let type_name = type_to_string(inner_type);
             responses_tokens.push(quote! {
-                ::forge_core::ApiResponse {
+                ::service_kit::ApiResponse {
                     status_code: 200,
                     description: #summary,
                     type_name: Some(#type_name),
@@ -168,7 +168,7 @@ pub fn api(args: TokenStream, input: TokenStream) -> TokenStream {
     // Add a default response if none was parsed
     if responses_tokens.is_empty() {
         responses_tokens.push(quote! {
-            ::forge_core::ApiResponse { status_code: 200, description: "Success", type_name: None }
+            ::service_kit::ApiResponse { status_code: 200, description: "Success", type_name: None }
         });
     }
 
@@ -181,14 +181,14 @@ pub fn api(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let static_metadata = quote! {
         #[allow(non_upper_case_globals)]
-        const #params_ident: &[::forge_core::ApiParameter] = &[#(#params_tokens),*];
+        const #params_ident: &[::service_kit::ApiParameter] = &[#(#params_tokens),*];
         #[allow(non_upper_case_globals)]
-        const #responses_ident: &[::forge_core::ApiResponse] = &[#(#responses_tokens),*];
+        const #responses_ident: &[::service_kit::ApiResponse] = &[#(#responses_tokens),*];
         #[allow(non_upper_case_globals)]
-        const #request_body_ident: Option<&'static ::forge_core::ApiRequestBody> = #request_body_token;
+        const #request_body_ident: Option<&'static ::service_kit::ApiRequestBody> = #request_body_token;
 
-        ::forge_core::inventory::submit! {
-            ::forge_core::ApiMetadata {
+        ::service_kit::inventory::submit! {
+            ::service_kit::ApiMetadata {
                 operation_id: #fn_name_str,
                 method: #method_str,
                 path: #path_str,
@@ -201,7 +201,7 @@ pub fn api(args: TokenStream, input: TokenStream) -> TokenStream {
         }
 
         // Static handler function for REST/MCP routers
-        fn #exec_fn_ident(__params_ref: &serde_json::Value) -> ::forge_core::handler::DynHandlerFuture {
+        fn #exec_fn_ident(__params_ref: &serde_json::Value) -> ::service_kit::handler::DynHandlerFuture {
             let __params_json = __params_ref.clone();
             Box::pin(async move {
                 let params = __params_json.clone();
@@ -213,8 +213,8 @@ pub fn api(args: TokenStream, input: TokenStream) -> TokenStream {
         }
 
         // Register executable handler
-        ::forge_core::inventory::submit! {
-            ::forge_core::handler::ApiHandlerInventory {
+        ::service_kit::inventory::submit! {
+            ::service_kit::handler::ApiHandlerInventory {
                 operation_id: #fn_name_str,
                 handler: #exec_fn_ident,
             }
@@ -314,7 +314,7 @@ pub fn api_dto(attr: TokenStream, item: TokenStream) -> TokenStream {
             Clone,
             serde::Serialize,
             serde::Deserialize,
-            ::forge_core::utoipa::ToSchema
+            ::service_kit::utoipa::ToSchema
         )]
         #[serde(rename_all = #rename_all_strategy)]
     };
@@ -340,13 +340,13 @@ pub fn api_dto(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // 注册 DTO schema 到 inventory
     let registration = quote! {
-        ::forge_core::inventory::submit! {
-            ::forge_core::ApiDtoMetadata {
+        ::service_kit::inventory::submit! {
+            ::service_kit::ApiDtoMetadata {
                 name: #type_name_str,
                 schema_provider: || {
                     (
                         #type_name_str.to_string(),
-                        <#type_name as ::forge_core::utoipa::PartialSchema>::schema(),
+                        <#type_name as ::service_kit::utoipa::PartialSchema>::schema(),
                     )
                 },
             }

@@ -1,5 +1,5 @@
 use axum::{extract::{Path, Query}, Json, response::IntoResponse};
-use service_kit_macros::api;
+use service_kit::api;
 use crate::dtos::{AddParams, Product, ProductUpdate};
 
 /// Get a product by its ID
@@ -107,7 +107,6 @@ mod tests {
         let json_string = serde_json::to_string(&product).unwrap();
         let json_value: serde_json::Value = serde_json::from_str(&json_string).unwrap();
 
-        // Assert that the key is "productCode" and not "product_code"
         assert!(json_value.get("productCode").is_some());
         assert!(json_value.get("product_code").is_none());
     }
@@ -122,10 +121,9 @@ mod tests {
         let json_string = serde_json::to_string(&legacy_data).unwrap();
         let json_value: serde_json::Value = serde_json::from_str(&json_string).unwrap();
 
-        // Assert that keys are "user_id" and "transaction_amount"
         assert!(json_value.get("user_id").is_some());
         assert!(json_value.get("transaction_amount").is_some());
-        assert!(json_value.get("userId").is_none()); // Check that camelCase was not used
+        assert!(json_value.get("userId").is_none());
     }
 }
 

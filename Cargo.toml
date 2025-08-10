@@ -1,10 +1,16 @@
 [workspace]
 members = [
-    "service_kit",
     "examples/product-service",
+    "service_kit",
+    "service_kit/forge-core",
     "service_kit/forge-cli-wasm",
+    "service_kit/service-kit-macros",
 ]
 resolver = "2"
 
 [workspace.package]
 edition = "2021"
+version = "0.1.1"
+
+[patch.crates-io]
+service-kit-macros = { path = "service_kit/service-kit-macros" }

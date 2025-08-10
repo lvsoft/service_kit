@@ -4,6 +4,34 @@
 
 通过引入 `service_kit`,我们旨在建立一套标准化的微服务开发范式,确保所有服务在 API 规范、代码质量、类型安全和开发流程上保持高度一致。
 
+## 功能特性与组合方式
+
+`service_kit` 通过可选的 features 暴露功能，便于你“组合式”接入到自己的 Axum 应用中，而不是强制接管：
+
+- **macros (默认启用)**: 启用 `#[api]` 与 `#[api_dto]` 宏（由 `service_kit_macros` 再导出）。
+- **cli-core**: 轻量 CLI 构建与补全（兼容原生与 WASM）。
+- **api-cli**: 完整的原生 API CLI（引入 `tokio`、`reqwest` 等）。
+- **mcp**: 启用 MCP 路由生成工具。
+
+典型用法（伪代码）：
+
+```rust
+let openapi = service_kit::openapi_utils::build_openapi_basic("我的服务", env!("CARGO_PKG_VERSION"), "描述", "App");
+let rest = service_kit::bootstrap::rest_router_from_openapi(openapi.clone())?;
+
+// 合并至你自己的 Axum 应用
+let app = Router::new().merge(rest);
+```
+
+启用 `mcp` 时：
+
+```rust
+let tool_router = service_kit::bootstrap::mcp_router_from_openapi::<MyState>(openapi.clone())?;
+let mcp_server = MyMcpServer::new(tool_router);
+let mcp_service = StreamableHttpService::new(move || Ok(mcp_server.clone()), LocalSessionManager::default().into(), Default::default());
+let app = app.nest_service("/mcp", mcp_service);
+```
+
 ## 核心组件
 
 `service_kit` 主要由以下三个核心组件构成:
@@ -60,13 +88,22 @@ npm install -g openapi-typescript
 cargo generate --git https://github.com/lvsoft/service_kit.git service-template --name my-awesome-service
 ```
 
-### 步骤 3: 运行服务
+### 步骤 3: 运行服务（按需开关模板 features）
 
 进入新创建的项目目录并启动服务。
 
 ```bash
 cd my-awesome-service
+## 模板默认 features 全开：swagger-ui, wasm-cli, mcp
 cargo run
+
+## 关闭全部模板 features
+cargo run --no-default-features
+
+## 选择性启用
+cargo run --no-default-features --features swagger-ui
+cargo run --no-default-features --features wasm-cli
+cargo run --no-default-features --features mcp
 ```
 
 ---
@@ -75,7 +112,19 @@ cargo run
 
 ### `cargo forge` (构建 & 质量)
 
-所有 `cargo forge` 命令都应在**你生成的服务目录**(例如 `my-awesome-service/`)下运行。这些命令由你的项目依赖 `service_kit` 提供。
+模板会自动写入一个 cargo alias，使 `cargo forge` 映射到外部 `forge-cli` 二进制。使用方法：
+
+1) 先安装二进制（一次性）：
+```bash
+cargo install service_kit --features api-cli
+```
+
+2) 在模板生成的项目目录下运行：
+```bash
+cargo forge help
+```
+
+所有 `cargo forge` 命令都应在**你生成的服务目录**(例如 `my-awesome-service/`)下运行。
 
 - **`cargo forge test`**: 运行项目的所有测试。
 - **`cargo forge lint`**: 对项目进行严格的代码质量检查。
@@ -93,7 +142,7 @@ cargo run
 `service_kit` 提供了一个名为 `forge-cli` 的二进制程序，它是一个基于 OpenAPI 规范的交互式 API 客户端。
 
 **安装**:
-在 `service_kit` 发布到 crates.io 后, 你可以通过 `cargo install` 来安装它。请注意，需要启用 `api-cli` 功能标志。
+通过 crates.io 安装，启用 `api-cli` 功能标志。
 
 ```bash
 cargo install service_kit --features api-cli

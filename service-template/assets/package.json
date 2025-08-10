@@ -1,6 +1,6 @@
 {
   "name": "forge-cli-wasm",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "files": [
     "forge_cli_wasm_bg.wasm",
     "forge_cli_wasm.js",

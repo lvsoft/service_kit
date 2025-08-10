@@ -1,6 +1,6 @@
 [package]
 name = "service_kit"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 authors = ["lvsoft"]
 description = "A foundational toolkit for building high-performance, modular services in Rust."
@@ -17,27 +17,35 @@ path = "src/main.rs"
 required-features = ["cli-support"]
 
 [dependencies]
-# Dependencies for the proc-macro lib
+# proc-macro consumers and toolchain utilities
 syn = { version = "2.0", features = ["full", "extra-traits"] }
 quote = "1.0"
 proc-macro2 = "1.0"
 toml = "0.9"
-service-kit-macros = { path = "service-kit-macros" }
+service-kit-macros = { version = "0.1.1", optional = true }
 
-# Dependencies for the forge-cli binary
+# unified runtime deps (migrated from forge-core)
+axum = { version = "0.8", features = ["json"], default-features = false }
+once_cell = "1.19"
+inventory = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_urlencoded = "0.7.1"
+thiserror = "2.0.12"
+utoipa = { version = "5.4.0", features = ["axum_extras", "macros"] }
+
+# Optional feature-gated deps
 anyhow = { version = "1.0", optional = true }
 clap = { version = "4.5", features = ["derive", "env"], optional = true }
 walkdir = { version = "2.5", optional = true }
 fs_extra = { version = "1.3", optional = true }
-forge-core = { path = "forge-core", optional = true }
-tokio = { version = "1.0", features = ["full"], optional = true }
-
-# REPL-specific dependencies
-reedline = { version = "0.22.0", optional = true }
-colored = { version = "2.1.0", optional = true }
-nu-ansi-term = { version = "0.49.0", optional = true }
+tokio = { version = "1.38.0", features = ["full"], optional = true }
+reedline = { version = "0.41.0", features = ["bashisms", "sqlite"], optional = true }
+nu-ansi-term = { version = "0.50.0", optional = true }
 oas = { version = "0.1.1", optional = true }
 shlex = { version = "1.3.0", optional = true }
+rmcp = { version = "0.5.0", optional = true }
+reqwest = { version = "0.12", features = ["json"], optional = true }
 
 
 [dev-dependencies]
@@ -49,17 +57,27 @@ toml = "0.9"
 # 目前build.rs只使用std库，如果将来需要额外依赖可以在这里添加
 
 [features]
-default = []
-# The "cli-support" feature enables the forge-cli binary itself.
+default = ["macros"]
+macros = ["dep:service-kit-macros"]
+
+# 轻量 CLI 内核：仅包含构建 CLI 所需依赖（兼容 wasm）
+cli-core = [
+    "dep:clap",
+    "dep:oas",
+    "dep:shlex",
+]
+
+# 原先的 cli-support（保留以兼容）
 cli-support = ["dep:anyhow", "dep:clap", "dep:walkdir", "dep:fs_extra"]
-# The "api-cli" feature enables the full API client logic and all its dependencies.
+
+# 完整的本地 API CLI（native）：在 cli-core 基础上引入网络、终端与异步运行时
 api-cli = [
-    "cli-support", 
-    "dep:forge-core",
+    "cli-core",
     "dep:tokio",
     "dep:reedline",
-    "dep:colored",
     "dep:nu-ansi-term",
-    "dep:oas",
-    "dep:shlex"
+    "dep:reqwest",
 ]
+
+# MCP 相关功能
+mcp = ["dep:rmcp"]

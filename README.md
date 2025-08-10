@@ -6,6 +6,34 @@
 
 By introducing `service_kit`, we aim to establish a standardized microservice development paradigm, ensuring that all services maintain a high degree of consistency in API specifications, code quality, type safety, and development workflows.
 
+## Features and Composition
+
+`service_kit` exposes several opt-in features so you can compose your service without the library taking over your Axum setup:
+
+- **macros (default)**: Enables `#[api]` and `#[api_dto]` macros re-exported from `service_kit_macros`.
+- **cli-core**: Lightweight CLI builder and completion (compatible with native/WASM environments).
+- **api-cli**: Full native API CLI support (adds `tokio`, `reqwest`, terminal deps).
+- **mcp**: Enables MCP router generation utilities.
+
+Typical usage in your service (pseudocode):
+
+```rust
+let openapi = service_kit::openapi_utils::build_openapi_basic("My Service", env!("CARGO_PKG_VERSION"), "desc", "App");
+let rest = service_kit::bootstrap::rest_router_from_openapi(openapi.clone())?;
+
+// Merge into your own Axum app instead of service_kit taking over
+let app = Router::new().merge(rest);
+```
+
+When `mcp` is enabled:
+
+```rust
+let tool_router = service_kit::bootstrap::mcp_router_from_openapi::<MyState>(openapi.clone())?;
+let mcp_server = MyMcpServer::new(tool_router);
+let mcp_service = StreamableHttpService::new(move || Ok(mcp_server.clone()), LocalSessionManager::default().into(), Default::default());
+let app = app.nest_service("/mcp", mcp_service);
+```
+
 ## Core Components
 
 `service_kit` consists of three main core components:
@@ -61,13 +89,22 @@ Use the `cargo generate` command to create a new project named `my-awesome-servi
 cargo generate --git https://github.com/lvsoft/service_kit.git service-template --name my-awesome-service
 ```
    
-### Step 3: Run the Service
+### Step 3: Run the Service (feature toggles)
    
 Navigate into the newly created project directory and start the service.
    
 ```bash
 cd my-awesome-service
+## default (all on in the template): swagger-ui, wasm-cli, mcp
 cargo run
+
+## turn off all template features
+cargo run --no-default-features
+
+## selectively enable
+cargo run --no-default-features --features swagger-ui
+cargo run --no-default-features --features wasm-cli
+cargo run --no-default-features --features mcp
 ```
    
 ---
@@ -75,8 +112,20 @@ cargo run
 ## `forge` Command Demonstration
    
 ### `cargo forge` (Build & Quality)
-   
-All `cargo forge` commands should be run from within **your generated service directory** (e.g., `my-awesome-service/`). These commands are provided by your project's `service_kit` dependency.
+
+By default the template wires a cargo alias so `cargo forge` resolves to the external `forge-cli` binary. To use it:
+
+1) Install the binary (once):
+```bash
+cargo install service_kit --features api-cli
+```
+
+2) In a project generated from the template, run:
+```bash
+cargo forge help
+```
+
+All `cargo forge` commands should be run from within **your generated service directory** (e.g., `my-awesome-service/`).
    
 -   **`cargo forge test`**: Runs all tests for the project.
 -   **`cargo forge lint`**: Performs strict code quality checks on the project.
@@ -94,7 +143,7 @@ All `cargo forge` commands should be run from within **your generated service di
 `service_kit` provides a binary named `forge-cli`, which is an interactive API client based on the OpenAPI specification.
 
 **Installation**:
-Once `service_kit` is published to crates.io, you can install it using `cargo install`. Note that you need to enable the `api-cli` feature flag.
+Install from crates.io and enable the `api-cli` feature flag.
 
 ```bash
 cargo install service_kit --features api-cli

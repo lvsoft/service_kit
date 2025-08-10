@@ -1,4 +1,4 @@
-use service_kit_macros::api_dto;
+use service_kit::api_dto;
 
 /// Parameters for adding two numbers.
 #[api_dto]

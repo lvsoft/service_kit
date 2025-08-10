@@ -1,6 +1,6 @@
-use axum::{extract::Query, Json};
+use axum::Json;
 use crate::dtos::{AddParams, AddResponse, Greeting};
-use service_kit_macros::api;
+use service_kit::api;
 
 /// Returns a simple greeting.
 #[api(GET, "/v1/hello")]

@@ -1,7 +1,11 @@
 [package]
 name = "service-kit-macros"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/lvsoft/service_kit"
+description = "Procedural macros for service_kit (e.g., #[api], #[api_dto])"
+documentation = "https://docs.rs/service_kit"
 
 [lib]
 proc-macro = true
@@ -12,5 +16,4 @@ quote = "1.0"
 heck = "0.5.0"
 inventory = "0.3"
 proc-macro2 = "1.0"
-forge-core = { path = "../forge-core" }
 utoipa = { version = "5.4", features = ["axum_extras", "openapi_extensions"] }

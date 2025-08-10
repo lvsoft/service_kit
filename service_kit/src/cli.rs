@@ -68,3 +68,5 @@ fn add_operations_as_subcommands(mut app: Command, path: &str, item: &PathItem) 
     }
     app
 }
+
+

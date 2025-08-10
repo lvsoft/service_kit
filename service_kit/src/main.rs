@@ -7,6 +7,7 @@
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use std::env;
+use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -17,36 +18,52 @@ mod repl;
 // including parsing arguments and deciding whether to start the REPL.
 #[cfg(feature = "api-cli")]
 async fn api_cli(args: Vec<String>) -> Result<()> {
-    use forge_core::Cli as ApiCli;
-    use forge_core::ApiCommand;
-    use clap::CommandFactory;
+    // Manual lightweight parsing to support forwarding unknown subcommands/args
+    // Accept: --url <URL> or --url=<URL> or env API_URL
+    let mut forwarded: Vec<String> = Vec::new();
+    let mut iter = args.into_iter();
+    let mut url_opt: Option<String> = std::env::var("API_URL").ok();
+    while let Some(arg) = iter.next() {
+        if arg == "--url" {
+            if let Some(v) = iter.next() { url_opt = Some(v); }
+        } else if let Some(rest) = arg.strip_prefix("--url=") {
+            url_opt = Some(rest.to_string());
+        } else {
+            forwarded.push(arg);
+        }
+    }
 
-    let mut full_args = vec!["forge-api-cli".to_string()];
-    full_args.extend(args);
-    
-    // Parse arguments using the struct from forge-core
-    let cli_args = ApiCli::try_parse_from(full_args)?;
-    
-    // Extract the URL, or print help and exit if it's missing.
-    let url = match &cli_args.url {
-        Some(url) => url.clone(),
+    let url = match url_opt {
+        Some(u) => u,
         None => {
-            ApiCli::command().print_help()?;
-            eprintln!("\n\nError: Missing required argument --url <URL> or API_URL environment variable.");
+            eprintln!("Usage: cargo forge api-cli --url <URL> [<subcommand> ...]\n       or set API_URL env var");
             return Ok(());
         }
     };
 
-    // Decide whether to execute a direct command or start the REPL.
-    match &cli_args.command {
-        Some(ApiCommand::External(_)) => {
-            // If there's a command, let forge-core handle it.
-            forge_core::run_with_cli_args(cli_args).await?;
-        },
-        None => {
-            // If there's no command, start the native REPL.
-            let spec = forge_core::client::fetch_openapi_spec(&url).await?;
-            repl::start_repl(&url, &spec).await?;
+    let spec = service_kit::client::fetch_openapi_spec(&url).await?;
+
+    if forwarded.is_empty() {
+        // No subcommand provided: start REPL
+        repl::start_repl(&url, &spec).await?;
+        return Ok(());
+    }
+
+    // Pure CLI mode: build dynamic CLI from spec and execute once
+    let command = service_kit::cli::build_cli_from_spec(&spec);
+    let mut argv = vec!["forge-api-cli".to_string()];
+    argv.extend(forwarded);
+    match command.clone().try_get_matches_from(argv) {
+        Ok(matches) => {
+            if let Some((subcommand_name, subcommand_matches)) = matches.subcommand() {
+                service_kit::client::execute_request(&url, subcommand_name, subcommand_matches, &spec).await?;
+            } else {
+                // If nothing matched, fall back to REPL
+                repl::start_repl(&url, &spec).await?;
+            }
+        }
+        Err(e) => {
+            eprintln!("{}", e);
         }
     }
     Ok(())
@@ -55,7 +72,31 @@ async fn api_cli(args: Vec<String>) -> Result<()> {
 
 /// The main CLI entry point for `cargo forge`.
 #[derive(Parser, Debug)]
-#[command(author, version, about = "A custom build and task runner for projects using service_kit.")]
+#[command(
+    author,
+    version,
+    about = "A custom build and task runner for projects using service_kit.",
+    after_help = r#"
+Additional usage:
+
+  api-cli (Interactive / Pure CLI OpenAPI client)
+    - Start interactive REPL:
+        cargo forge api-cli --url http://127.0.0.1:3000
+    - Run a single GET endpoint directly:
+        cargo forge api-cli --url http://127.0.0.1:3000 v1.hello.get
+    - Run a single POST endpoint with JSON body:
+        cargo forge api-cli --url http://127.0.0.1:3000 v1.add.post --body '{"a":1,"b":2}'
+
+  generate-types (OpenAPI -> TypeScript)
+    - Usage:
+        cargo forge generate-types --input <URL_OR_PATH_TO_OPENAPI_JSON> --output <TS_FILE_PATH>
+    - Example:
+        cargo forge generate-types \
+          --input http://127.0.0.1:3000/api-docs/openapi.json \
+          --output src/frontend/types/api.ts
+    - Note: requires Node.js with `npx` available; `openapi-typescript` will be run via `npx`.
+"#
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -144,8 +185,35 @@ fn generate_types(args: GenerateTypesArgs) -> Result<()> {
 /// Handler for the `lint` command.
 fn lint() -> Result<()> {
     println!("▶️  Running linter...");
-    println!("   Running 'cargo clippy' with -D warnings...");
-    run_cargo_command(&["clippy", "--", "-D", "warnings"], "Failed to run cargo clippy")?;
+    println!("   Running 'cargo clippy' on current package only with -D warnings...");
+    let project_root = get_project_root()?;
+    let manifest_path = project_root.join("Cargo.toml");
+    let manifest_str = fs::read_to_string(&manifest_path)
+        .context("Failed to read Cargo.toml in current directory")?;
+    let manifest_value: toml::Value = toml::from_str(&manifest_str)
+        .context("Failed to parse Cargo.toml")?;
+    let package_name = manifest_value
+        .get("package")
+        .and_then(|p| p.get("name"))
+        .and_then(|n| n.as_str())
+        .map(|s| s.to_string())
+        .context("`package.name` not found in Cargo.toml")?;
+
+    let manifest_arg = manifest_path.display().to_string();
+    run_cargo_command(
+        &[
+            "clippy",
+            "--manifest-path",
+            &manifest_arg,
+            "-p",
+            &package_name,
+            "--no-deps",
+            "--",
+            "-D",
+            "warnings",
+        ],
+        "Failed to run cargo clippy",
+    )?;
     println!("✅ All checks passed.");
     Ok(())
 }

@@ -1,6 +1,6 @@
 [package]
 name = "product-service"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 publish = false
 
@@ -23,8 +23,7 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 anyhow = "1"
 rust-embed = "8.6.0"
 axum-embed = "0.1.0"
-service-kit-macros = { path = "../../service_kit/service-kit-macros" }
-forge-core = { path = "../../service_kit/forge-core" }
+ service_kit = { path = "../../service_kit", features = ["mcp"] }
 
 [features]
 default = []

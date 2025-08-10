@@ -28,7 +28,7 @@ pub fn init_cli(spec_json: &str, base_url: &str) -> Result<(), JsValue> {
         .map_err(|e| JsValue::from_str(&format!("Spec Deserialization Error: {}", e)))?;
     
     // Build the clap command from the spec using the core logic.
-    let command = forge_core::cli::build_cli_from_spec(&spec);
+    let command = service_kit::cli::build_cli_from_spec(&spec);
     
     // Store the command, spec, and base URL in our global static variables.
     *CLI_COMMAND.lock().unwrap() = Some(command);
@@ -283,7 +283,7 @@ impl CompletionResult {
 /// 获取Tab补全建议
 #[wasm_bindgen]
 pub fn get_completions(line: &str, cursor_pos: usize) -> CompletionResult {
-    use forge_core::wasm_completer::WasmCompleter;
+    use service_kit::wasm_completer::WasmCompleter;
     
     let cli_command_guard = CLI_COMMAND.lock().unwrap();
     

@@ -5,3 +5,4 @@ cargo_generate_version = ">=0.10.0"
 exclude = [
     "assets/forge_cli_wasm_bg.wasm"
 ]
+

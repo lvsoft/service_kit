@@ -1,144 +1,23 @@
-use reedline::{Completer, Span, Suggestion};
-use nu_ansi_term::Style;
-use clap::{Command};
+use clap::Command;
 
-/// A completer for clap commands.
-pub struct ClapCompleter {
+#[derive(Debug, Clone)]
+pub struct CompletionSuggestion {
+    pub value: String,
+    pub description: Option<String>,
+    pub start_pos: usize,
+    pub end_pos: usize,
+}
+
+pub struct WasmCompleter {
     command: Command,
 }
 
-impl ClapCompleter {
+impl WasmCompleter {
     pub fn new(command: Command) -> Self {
         Self { command }
     }
-}
 
-fn find_subcommand_suggestions(
-    command: &Command,
-    parts: &[String],
-    current_word: &str,
-    span_start: usize,
-    span_end: usize,
-) -> Vec<Suggestion> {
-    let mut current_cmd = command;
-    let mut suggestions = Vec::new();
-
-    // Traverse the subcommand path
-    let relevant_parts_count = if current_word.is_empty() && !parts.is_empty()
-        && parts.last().map_or(false, |p| !p.is_empty()) {
-        parts.len()
-    } else {
-        parts.len().saturating_sub(1)
-    };
-
-    for part in parts.iter().take(relevant_parts_count) {
-        if let Some(sub_cmd) = current_cmd.get_subcommands().find(|sc| sc.get_name() == part) {
-            current_cmd = sub_cmd;
-        } else {
-            return suggestions;
-        }
-    }
-
-    // Find matching subcommands
-    for sub_cmd in current_cmd.get_subcommands() {
-        if sub_cmd.get_name().starts_with(current_word) {
-            suggestions.push(Suggestion {
-                value: sub_cmd.get_name().to_string(),
-                description: sub_cmd.get_about().map(|s| s.to_string()),
-                extra: None,
-                span: Span::new(span_start, span_end),
-                append_whitespace: true,
-                style: Some(Style::new()),
-            });
-        }
-    }
-    suggestions
-}
-
-fn find_argument_suggestions(
-    command: &Command,
-    current_word: &str,
-    span_start: usize,
-    span_end: usize,
-) -> Vec<Suggestion> {
-    let mut suggestions = Vec::new();
-    if !current_word.starts_with('-') {
-        return suggestions;
-    }
-
-    for arg in command.get_arguments() {
-        if let Some(long) = arg.get_long() {
-            let long_flag = format!("--{}", long);
-            if long_flag.starts_with(current_word) {
-                suggestions.push(Suggestion {
-                    value: long_flag,
-                    description: arg.get_help().map(|s| s.to_string()),
-                    extra: None,
-                    span: Span::new(span_start, span_end),
-                    append_whitespace: !arg.get_action().takes_values(),
-                    style: Some(Style::new()),
-                });
-            }
-        }
-        if let Some(short) = arg.get_short() {
-            let short_flag = format!("-{}", short);
-            if short_flag.starts_with(current_word) {
-                if !suggestions.iter().any(|s| s.value == short_flag) {
-                    suggestions.push(Suggestion {
-                        value: short_flag,
-                        description: arg.get_help().map(|s| s.to_string()),
-                        extra: None,
-                        span: Span::new(span_start, span_end),
-                        append_whitespace: !arg.get_action().takes_values(),
-                        style: Some(Style::new()),
-                    });
-                }
-            }
-        }
-    }
-    suggestions
-}
-
-fn find_value_suggestions(
-    arg: &clap::Arg,
-    current_word: &str,
-    span_start: usize,
-    span_end: usize,
-) -> Vec<Suggestion> {
-    let mut suggestions = Vec::new();
-    for pv in arg.get_possible_values() {
-        if pv.get_name().starts_with(current_word) {
-            suggestions.push(Suggestion {
-                value: pv.get_name().to_string(),
-                description: pv.get_help().map(|s| s.to_string()),
-                extra: None,
-                span: Span::new(span_start, span_end),
-                append_whitespace: true,
-                style: Some(Style::new()),
-            });
-        }
-    }
-    suggestions
-}
-
-fn get_command_at_path<'a>(base_cmd: &'a Command, parts: &[String]) -> &'a Command {
-    let mut current_cmd = base_cmd;
-    for part_name in parts {
-        if !part_name.starts_with('-') {
-            if let Some(sub_cmd) = current_cmd.get_subcommands().find(|sc| sc.get_name() == part_name) {
-                current_cmd = sub_cmd;
-            } else {
-                break;
-            }
-        } else {
-            break;
-        }
-    }
-    current_cmd
-}
-
-impl Completer for ClapCompleter {
-    fn complete(&mut self, line: &str, pos: usize) -> Vec<Suggestion> {
+    pub fn complete(&self, line: &str, pos: usize) -> Vec<CompletionSuggestion> {
         let mut suggestions = Vec::new();
         let line_to_cursor = &line[..pos];
 
@@ -156,10 +35,7 @@ impl Completer for ClapCompleter {
         let mut last_arg_opt: Option<&clap::Arg> = None;
         let mut potential_value_completion_context = false;
 
-        // Parse command path
-        let effective_parts_for_cmd_structure = &parts[..];
-
-        for (idx, part) in effective_parts_for_cmd_structure.iter().enumerate() {
+        for (idx, part) in parts.iter().enumerate() {
             if idx == parts.len() - 1 && !line_to_cursor.ends_with(' ') {
                 if let Some(last_arg) = last_arg_opt {
                     if last_arg.get_action().takes_values() {
@@ -201,7 +77,6 @@ impl Completer for ClapCompleter {
             }
         }
 
-        // Priority 1: Complete argument values
         if potential_value_completion_context {
             if let Some(arg_name_part_idx) = parts.len().checked_sub(2) {
                 if let Some(arg_name_part) = parts.get(arg_name_part_idx) {
@@ -220,26 +95,19 @@ impl Completer for ClapCompleter {
             }
         }
 
-        // Handle trailing space for value completion
         if line_to_cursor.ends_with(' ') && last_arg_opt.map_or(false, |arg| arg.get_action().takes_values()) {
             if let Some(arg_that_needs_value) = last_arg_opt {
                 suggestions.extend(find_value_suggestions(arg_that_needs_value, "", span_start, pos));
             }
         }
 
-        // If no value suggestions, provide other types of completions
         if suggestions.is_empty() {
-            let base_cmd_for_suggestions = current_cmd;
-
-            // Argument completion
             if current_word.starts_with('-') {
-                suggestions.extend(find_argument_suggestions(base_cmd_for_suggestions, current_word, span_start, pos));
+                suggestions.extend(find_argument_suggestions(current_cmd, current_word, span_start, pos));
             }
 
-            // Subcommand completion
             suggestions.extend(find_subcommand_suggestions(current_cmd, &[], current_word, span_start, pos));
 
-            // Argument suggestions on trailing space
             if line_to_cursor.ends_with(' ') && current_word.is_empty() {
                 let existing_flags: std::collections::HashSet<_> = parts.iter()
                     .filter(|p| p.starts_with("-"))
@@ -248,13 +116,12 @@ impl Completer for ClapCompleter {
 
                 let mut new_arg_suggestions = Vec::new();
 
-                // Long args
-                let long_args = find_argument_suggestions(base_cmd_for_suggestions, "--", span_start, pos)
+                let long_args = find_argument_suggestions(current_cmd, "--", span_start, pos)
                     .into_iter()
                     .filter(|s| s.value.starts_with("--"));
 
                 for sugg in long_args {
-                    if let Some(arg_def) = base_cmd_for_suggestions.get_arguments().find(|a| {
+                    if let Some(arg_def) = current_cmd.get_arguments().find(|a| {
                         a.get_long().map_or(false, |l| format!("--{}", l) == sugg.value)
                     }) {
                         if matches!(*arg_def.get_action(), clap::ArgAction::SetTrue) && existing_flags.contains(sugg.value.as_str()) {
@@ -264,13 +131,12 @@ impl Completer for ClapCompleter {
                     new_arg_suggestions.push(sugg);
                 }
 
-                // Short args
-                let short_args = find_argument_suggestions(base_cmd_for_suggestions, "-", span_start, pos)
+                let short_args = find_argument_suggestions(current_cmd, "-", span_start, pos)
                     .into_iter()
                     .filter(|s| s.value.starts_with('-') && !s.value.starts_with("--"));
 
                 for sugg in short_args {
-                    if let Some(arg_def) = base_cmd_for_suggestions.get_arguments().find(|a| {
+                    if let Some(arg_def) = current_cmd.get_arguments().find(|a| {
                         a.get_short().map_or(false, |s_char| format!("-{}", s_char) == sugg.value)
                     }) {
                         if matches!(*arg_def.get_action(), clap::ArgAction::SetTrue) && existing_flags.contains(sugg.value.as_str()) {
@@ -283,7 +149,6 @@ impl Completer for ClapCompleter {
             }
         }
 
-        // Deduplicate suggestions
         let mut final_suggestions = Vec::new();
         let mut seen_values = std::collections::HashSet::new();
         for s in suggestions {
@@ -294,3 +159,119 @@ impl Completer for ClapCompleter {
         final_suggestions
     }
 }
+
+fn find_subcommand_suggestions(
+    command: &Command,
+    parts: &[String],
+    current_word: &str,
+    span_start: usize,
+    span_end: usize,
+) -> Vec<CompletionSuggestion> {
+    let mut current_cmd = command;
+    let mut suggestions = Vec::new();
+
+    let relevant_parts_count = if current_word.is_empty() && !parts.is_empty()
+        && parts.last().map_or(false, |p| !p.is_empty()) {
+        parts.len()
+    } else {
+        parts.len().saturating_sub(1)
+    };
+
+    for part in parts.iter().take(relevant_parts_count) {
+        if let Some(sub_cmd) = current_cmd.get_subcommands().find(|sc| sc.get_name() == part) {
+            current_cmd = sub_cmd;
+        } else {
+            return suggestions;
+        }
+    }
+
+    for sub_cmd in current_cmd.get_subcommands() {
+        if sub_cmd.get_name().starts_with(current_word) {
+            suggestions.push(CompletionSuggestion {
+                value: sub_cmd.get_name().to_string(),
+                description: sub_cmd.get_about().map(|s| s.to_string()),
+                start_pos: span_start,
+                end_pos: span_end,
+            });
+        }
+    }
+    suggestions
+}
+
+fn find_argument_suggestions(
+    command: &Command,
+    current_word: &str,
+    span_start: usize,
+    span_end: usize,
+) -> Vec<CompletionSuggestion> {
+    let mut suggestions = Vec::new();
+    if !current_word.starts_with('-') {
+        return suggestions;
+    }
+
+    for arg in command.get_arguments() {
+        if let Some(long) = arg.get_long() {
+            let long_flag = format!("--{}", long);
+            if long_flag.starts_with(current_word) {
+                suggestions.push(CompletionSuggestion {
+                    value: long_flag,
+                    description: arg.get_help().map(|s| s.to_string()),
+                    start_pos: span_start,
+                    end_pos: span_end,
+                });
+            }
+        }
+        if let Some(short) = arg.get_short() {
+            let short_flag = format!("-{}", short);
+            if short_flag.starts_with(current_word) {
+                if !suggestions.iter().any(|s| s.value == short_flag) {
+                    suggestions.push(CompletionSuggestion {
+                        value: short_flag,
+                        description: arg.get_help().map(|s| s.to_string()),
+                        start_pos: span_start,
+                        end_pos: span_end,
+                    });
+                }
+            }
+        }
+    }
+    suggestions
+}
+
+fn find_value_suggestions(
+    arg: &clap::Arg,
+    current_word: &str,
+    span_start: usize,
+    span_end: usize,
+) -> Vec<CompletionSuggestion> {
+    let mut suggestions = Vec::new();
+    for pv in arg.get_possible_values() {
+        if pv.get_name().starts_with(current_word) {
+            suggestions.push(CompletionSuggestion {
+                value: pv.get_name().to_string(),
+                description: pv.get_help().map(|s| s.to_string()),
+                start_pos: span_start,
+                end_pos: span_end,
+            });
+        }
+    }
+    suggestions
+}
+
+fn get_command_at_path<'a>(base_cmd: &'a Command, parts: &[String]) -> &'a Command {
+    let mut current_cmd = base_cmd;
+    for part_name in parts {
+        if !part_name.starts_with('-') {
+            if let Some(sub_cmd) = current_cmd.get_subcommands().find(|sc| sc.get_name() == part_name) {
+                current_cmd = sub_cmd;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    current_cmd
+}
+
+

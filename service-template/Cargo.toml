@@ -1,6 +1,6 @@
 [package]
 name = "{{project-name}}"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["{{authors}}"]
 default-run = "{{project-name}}-server"
@@ -20,12 +20,8 @@ path = "src/bin/api-cli.rs"
 # required-features = ["service_kit/api-cli"] 
 
 [dependencies]
-# service_kit = { path = "/home/lv/nvm/works/service_kit/service_kit", features = ["api-cli"] }
+service_kit = { version = "0.1.1", default-features = true }
 anyhow = "1.0"
-
-# --- Service Kit core libraries ---
-forge-core = { path = "/home/lv/nvm/works/service_kit/service_kit/forge-core" }
-service-kit-macros = { path = "/home/lv/nvm/works/service_kit/service_kit/service-kit-macros" }
 rmcp = { version = "0.5.0", features = [
     "transport-streamable-http-server",
     "transport-worker"
@@ -51,8 +47,14 @@ dotenvy = "0.15"
 rust-embed = "8.7"
 axum-embed = "0.1.0"
 
+# Feature 管理：默认全部启用，可选择性关闭
 [features]
-default = []
+default = ["swagger-ui", "wasm-cli", "mcp"]
+swagger-ui = []
+wasm-cli = []
+# 让模板的 `mcp` 特性联动 service_kit 的 mcp 功能
+mcp = ["service_kit/mcp"]
+# 可选：透传 api-cli 给 service_kit
 # api-cli = ["service_kit/api-cli"]
 
 # --- For Local Development ---

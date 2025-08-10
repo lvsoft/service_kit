@@ -10,5 +10,7 @@ proc-macro = true
 syn = { version = "2.0", features = ["full"] }
 quote = "1.0"
 heck = "0.5.0"
-ctor = "0.2.7"
+inventory = "0.3"
 proc-macro2 = "1.0"
+forge-core = { path = "../forge-core" }
+utoipa = { version = "5.4", features = ["axum_extras", "openapi_extensions"] }

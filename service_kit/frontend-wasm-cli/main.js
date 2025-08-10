@@ -42,7 +42,11 @@ async function main() {
             throw new Error(`Failed to fetch spec: ${response.statusText}`);
         }
         const specJson = await response.text();
-        
+        const spec = JSON.parse(specJson);
+        // 保存到全局以便 JS fallback 使用
+        window.__openapiSpec = spec;
+        window.__baseUrl = baseUrl;
+
         init_cli(specJson, baseUrl);
         term.writeln('\r✅ CLI initialized with OpenAPI spec.');
 
@@ -196,6 +200,81 @@ async function main() {
         redrawLine();
     }
     
+    // JS fallback：当 wasm 返回 Path not found 时，用 JS 直接按 OpenAPI 执行
+    async function executeCommandJS(commandLine) {
+        try {
+            const spec = window.__openapiSpec;
+            const baseUrl = window.__baseUrl || '';
+            if (!spec) return 'Error: OpenAPI spec not loaded.';
+            const tokens = commandLine.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
+            if (tokens.length === 0) return '';
+            const cmd = tokens[0];
+            const args = {};
+            for (let i = 1; i < tokens.length; i++) {
+                const t = tokens[i];
+                if (t.startsWith('--')) {
+                    const key = t.replace(/^--/, '');
+                    const val = (i + 1 < tokens.length && !tokens[i + 1].startsWith('--')) ? tokens[++i] : '';
+                    args[key] = val.replace(/^"|"$/g, '');
+                }
+            }
+            const parts = cmd.split('.');
+            const method = parts.pop().toUpperCase();
+            const cmdSegs = parts;
+            // 匹配路径模板
+            let matched = null;
+            for (const [key, item] of Object.entries(spec.paths || {})) {
+                const keySegs = key.split('/').filter(s => s);
+                if (keySegs.length !== cmdSegs.length) continue;
+                let ok = true;
+                for (let i = 0; i < keySegs.length; i++) {
+                    const ks = keySegs[i];
+                    const cs = cmdSegs[i];
+                    const isParam = ks.startsWith('{') && ks.endsWith('}');
+                    if (!isParam && ks !== cs) { ok = false; break; }
+                }
+                if (ok) { matched = [key, item]; break; }
+            }
+            if (!matched) {
+                return `API request failed (JS fallback): Path not found for /${cmdSegs.join('/')}`;
+            }
+            const [pathTemplate, pathItem] = matched;
+            const op = (pathItem[method.toLowerCase()]);
+            if (!op) return `API request failed (JS fallback): Operation not found for ${cmd}`;
+            // 构造路径和查询
+            let finalPath = pathTemplate;
+            const used = new Set();
+            if (Array.isArray(op.parameters)) {
+                for (const p of op.parameters) {
+                    const prm = p && p.name ? p : (p && p.$ref ? null : null);
+                    if (!prm) continue;
+                    if (p.in === 'path' && args[p.name] != null) {
+                        finalPath = finalPath.replace(`{${p.name}}`, encodeURIComponent(args[p.name]));
+                        used.add(p.name);
+                    }
+                }
+            }
+            const query = [];
+            for (const [k, v] of Object.entries(args)) {
+                if (!used.has(k)) query.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
+            }
+            let serverUrl = '';
+            if (Array.isArray(spec.servers) && spec.servers.length > 0 && spec.servers[0].url) {
+                serverUrl = spec.servers[0].url;
+            }
+            const url = `${baseUrl}${serverUrl}${finalPath}${query.length ? ('?' + query.join('&')) : ''}`;
+            const resp = await fetch(url, { method });
+            const text = await resp.text();
+            try {
+                return JSON.stringify(JSON.parse(text), null, 2);
+            } catch {
+                return text;
+            }
+        } catch (e) {
+            return `API request failed (JS fallback): ${e}`;
+        }
+    }
+
     term.write(prompt);
 
     term.onKey(({ key, domEvent }) => {
@@ -244,9 +323,13 @@ async function main() {
                 // 异步执行命令
                 (async () => {
                     try {
-                        const result = await run_command_async(currentLine);
+                        let result = await run_command_async(currentLine);
+                        const plain = String(result);
+                        if (plain.includes('Path not found for')) {
+                            result = await executeCommandJS(currentLine);
+                        }
                         // 清理ANSI转义序列
-                        const cleanResult = result
+                        const cleanResult = String(result)
                             .replace(/\x1b\[[0-9;]*m/g, '')
                             .replace(/\x1b\[[0-9]*[A-Za-z]/g, '')
                             .replace(/\[\d+m/g, '');

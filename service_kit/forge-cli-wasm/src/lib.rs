@@ -46,13 +46,44 @@ async fn execute_request_wasm(
     spec: &OpenAPIV3,
 ) -> Result<String, JsValue> {
     let parts: Vec<&str> = subcommand_name.split('.').collect();
-    let method_str = parts.last().unwrap().to_uppercase();
-    let path_template = format!("/{}", parts[..parts.len() - 1].join("/"));
-
-    let path_item = spec
+    let Some(method_seg) = parts.last() else {
+        return Err(JsValue::from_str("Invalid subcommand name"));
+    };
+    let method_str = method_seg.to_uppercase();
+    
+    // Resolve path template from command segments robustly
+    if parts.len() < 2 {
+        return Err(JsValue::from_str("Invalid subcommand name"));
+    }
+    let command_segments: Vec<&str> = parts[..parts.len() - 1].to_vec();
+    let candidate = spec
         .paths
-        .get(&path_template)
-        .ok_or_else(|| JsValue::from_str(&format!("Path not found for {}", path_template)))?;
+        .iter()
+        .find(|(key, _)| {
+            // Split key into segments excluding leading empty segment
+            let key_segs: Vec<&str> = key.split('/')
+                .filter(|s| !s.is_empty())
+                .collect();
+            if key_segs.len() != command_segments.len() {
+                return false;
+            }
+            // Match each segment: exact match or OpenAPI placeholder {name}
+            for (ks, cs) in key_segs.iter().zip(command_segments.iter()) {
+                let is_param = ks.starts_with('{') && ks.ends_with('}');
+                if !is_param && ks != cs {
+                    return false;
+                }
+            }
+            true
+        });
+    let (path_template, path_item) = match candidate {
+        Some(found) => found,
+        None => {
+            // 不要 panic，返回明确错误，供前端 fallback
+            let guess = format!("/{}", command_segments.join("/"));
+            return Err(JsValue::from_str(&format!("Path not found for {}", guess)));
+        }
+    };
 
     let operation = match method_str.as_str() {
         "GET" => path_item.get.as_ref(),
@@ -70,18 +101,21 @@ async fn execute_request_wasm(
     // Process parameters
     if let Some(params) = &operation.parameters {
         for param_ref in params {
-            if let Referenceable::Data(param) = param_ref {
-                if let Some(value) = matches.get_one::<String>(&param.name) {
-                    match param._in {
-                        oas::ParameterIn::Path => {
-                            final_path = final_path.replace(&format!("{{{}}}", param.name), value);
+            match param_ref {
+                Referenceable::Data(param) => {
+                    if let Some(value) = matches.get_one::<String>(&param.name) {
+                        match param._in {
+                            oas::ParameterIn::Path => {
+                                final_path = final_path.replace(&format!("{{{}}}", param.name), value);
+                            }
+                            oas::ParameterIn::Query => {
+                                query_params.insert(param.name.clone(), value.clone());
+                            }
+                            _ => {}
                         }
-                        oas::ParameterIn::Query => {
-                            query_params.insert(param.name.clone(), value.clone());
-                        }
-                        _ => {} // TODO: Handle Header, Cookie
                     }
                 }
+                _ => { /* ignore other variants for wasm */ }
             }
         }
     }
@@ -134,7 +168,7 @@ async fn execute_request_wasm(
     // Get the global window and use fetch from it
     let window = web_sys::window().unwrap();
     let resp_value = wasm_bindgen_futures::JsFuture::from(window.fetch_with_request(&request)).await?;
-    let response: web_sys::Response = resp_value.dyn_into().unwrap();
+    let response: web_sys::Response = resp_value.dyn_into().map_err(|_| JsValue::from_str("Invalid fetch response"))?;
 
     let status = response.status();
     log(&format!("<-- Response Status: {}", status));

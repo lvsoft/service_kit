@@ -6,6 +6,7 @@ use thiserror::Error;
 pub enum Error {
     #[error("Spec Error: {0}")]
     SpecError(String),
+    #[cfg(not(target_arch = "wasm32"))]
     #[error("Reqwest Error: {0}")]
     Reqwest(#[from] reqwest::Error),
     #[error("SerdeJson Error: {0}")]

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
-use axum::response::{Response};
+use axum::response::Response;
 use once_cell::sync::Lazy;
 use serde_json::Value;
 
@@ -88,3 +88,13 @@ impl std::fmt::Debug for ApiMethodHandler {
             .finish()
     }
 }
+
+// Inventory-based handler discovery used by router builders
+pub type DynHandlerFuture = Pin<Box<dyn Future<Output = crate::error::Result<Response>> + Send + 'static>>;
+
+pub struct ApiHandlerInventory {
+    pub operation_id: &'static str,
+    pub handler: fn(&Value) -> DynHandlerFuture,
+}
+
+inventory::collect!(ApiHandlerInventory);

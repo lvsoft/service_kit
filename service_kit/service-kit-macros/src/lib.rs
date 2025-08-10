@@ -1,14 +1,15 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use proc_macro2;
-use quote::{quote};
+use quote::{quote, format_ident};
 use syn::{
-    parse::Parse, parse::ParseStream, parse_macro_input, Attribute, Ident, ItemFn, LitStr,
-    Result, Token, Type, Pat, punctuated::Punctuated
+    parse::Parse, parse::ParseStream, parse_macro_input, Attribute, FnArg, Ident, ItemFn, LitStr,
+    Pat, Result, ReturnType, Token, Type, punctuated::Punctuated
 };
 
-// ... (ApiMacroArgs and other helpers remain the same)
+
+// --- Macro Implementations ---
+
 struct ApiMacroArgs {
     method: Ident,
     path: LitStr,
@@ -23,175 +24,231 @@ impl Parse for ApiMacroArgs {
     }
 }
 
-
 #[proc_macro_attribute]
 pub fn api(args: TokenStream, input: TokenStream) -> TokenStream {
-    let item = parse_macro_input!(input as ItemFn);
+    let item_fn = parse_macro_input!(input as ItemFn);
     let args_parsed = parse_macro_input!(args as ApiMacroArgs);
 
-    let fn_name = &item.sig.ident;
-    let operation_id = fn_name.to_string();
-    
-    // --- Handler Logic Generation ---
-    let (param_declarations, call_args) = generate_param_extraction_logic(&item);
+    let fn_ident = &item_fn.sig.ident;
+    let fn_name_str = fn_ident.to_string();
+    let method_str = args_parsed.method.to_string();
+    let path_str = args_parsed.path.value();
+    let (summary, description) = parse_doc_comments(&item_fn.attrs);
 
-    // This is the real handler logic that will be placed inside the Arc.
-    let handler_logic = quote! {
-        // This async block is the core of the type-erased handler.
-        async move {
-            // The `params` variable is the `&serde_json::Value` passed to the closure.
-            #param_declarations
+    // --- Parse Parameters and Request Body ---
+    let mut params_tokens = Vec::new();
+    let mut request_body_token = quote! { None };
 
-            // Call the original function with the extracted parameters.
-            let result = #fn_name(#(#call_args),*).await;
+    // For building runtime wrapper
+    let mut arg_prepare_tokens = Vec::new();
+    let mut call_args_tokens = Vec::new();
 
-            // Convert the result into an Axum Response.
-            // This assumes the function returns something that implements `IntoResponse`.
-            Ok(result.into_response())
-        }
-    };
-
-    // --- The rest of the macro (utoipa, ctor) ---
-    // ... (utoipa_path_gen logic remains the same)
-    let http_method_str = args_parsed.method.to_string().to_lowercase();
-    let http_method = Ident::new(&http_method_str, args_parsed.method.span());
-    let path_str = args_parsed.path;
-    let (summary, _description) = parse_doc_comments(&item.attrs);
-    let mut utoipa_params = Vec::new();
-    for arg in &item.sig.inputs {
-        if let syn::FnArg::Typed(pat_type) = arg {
-            if let Pat::Ident(pat_ident) = &*pat_type.pat {
-                let param_name = pat_ident.ident.to_string();
-                 let param_type = &pat_type.ty;
-                if let Some(inner_type) = get_inner_type(param_type, "Query") {
-                    utoipa_params.push(quote! { ( #param_name = inline(#inner_type), Query) });
-                } else if let Some(inner_type) = get_inner_type(param_type, "Path") {
-                    utoipa_params.push(quote! { (#param_name = #inner_type, Path, description = "ID") });
-                }
-            } else if let Pat::TupleStruct(pat_tuple) = &*pat_type.pat {
-                 if pat_tuple.path.is_ident("Path") {
-                    if let Some(Pat::Ident(inner_pat)) = pat_tuple.elems.first() {
+    for arg in &item_fn.sig.inputs {
+        if let FnArg::Typed(pat_type) = arg {
+            if let Some(inner_type) = get_inner_type(&pat_type.ty, "Path") {
+                if let Pat::TupleStruct(pat_tuple) = &*pat_type.pat {
+                     if let Some(Pat::Ident(inner_pat)) = pat_tuple.elems.first() {
                         let param_name = inner_pat.ident.to_string();
-                        let param_type = &pat_type.ty;
-                         if let Some(inner_type) = get_inner_type(param_type, "Path") {
-                            utoipa_params.push(quote! { (#param_name = #inner_type, Path, description = "ID") });
-                        }
+                        let type_name = type_to_string(inner_type);
+                        params_tokens.push(quote! {
+                            ::forge_core::ApiParameter {
+                                name: #param_name,
+                                param_in: ::forge_core::ParamIn::Path,
+                                description: "", // TODO: Parse from attributes
+                                required: true,
+                                type_name: #type_name,
+                            }
+                        });
+                        // runtime wrapper: read string and wrap
+                        let var_ident = &inner_pat.ident;
+                        arg_prepare_tokens.push(quote! {
+                            let #var_ident: String = match params.get(#param_name).and_then(|v| v.as_str()) {
+                                Some(s) => s.to_string(),
+                                None => String::new(),
+                            };
+                            let #var_ident = axum::extract::Path::<String>(#var_ident);
+                        });
+                        call_args_tokens.push(quote! { #var_ident });
                     }
+                } else if let Pat::Ident(pat_ident) = &*pat_type.pat {
+                    // Also support `id: Path<String>` style
+                    let param_name = pat_ident.ident.to_string();
+                    let type_name = type_to_string(inner_type);
+                    params_tokens.push(quote! {
+                        ::forge_core::ApiParameter {
+                            name: #param_name,
+                            param_in: ::forge_core::ParamIn::Path,
+                            description: "",
+                            required: true,
+                            type_name: #type_name,
+                        }
+                    });
+                    let var_ident = &pat_ident.ident;
+                    arg_prepare_tokens.push(quote! {
+                        let #var_ident: String = match params.get(#param_name).and_then(|v| v.as_str()) {
+                            Some(s) => s.to_string(),
+                            None => String::new(),
+                        };
+                        let #var_ident = axum::extract::Path::<String>(#var_ident);
+                    });
+                    call_args_tokens.push(quote! { #var_ident });
                 }
+            } else if let Some(inner_type) = get_inner_type(&pat_type.ty, "Query") {
+                // Support both `Query(params): Query<T>` and `params: Query<T>` patterns
+                let param_name_opt = if let Pat::TupleStruct(pat_tuple) = &*pat_type.pat {
+                    pat_tuple
+                        .elems
+                        .first()
+                        .and_then(|p| match p { Pat::Ident(pi) => Some(pi.ident.to_string()), _ => None })
+                } else if let Pat::Ident(pat_ident) = &*pat_type.pat {
+                    Some(pat_ident.ident.to_string())
+                } else { None };
+
+                if let Some(param_name) = param_name_opt {
+                    let type_name = type_to_string(inner_type);
+                    params_tokens.push(quote! {
+                        ::forge_core::ApiParameter {
+                            name: #param_name,
+                            param_in: ::forge_core::ParamIn::Query,
+                            description: "", // TODO: Parse from attributes
+                            required: true, // TODO: Detect Option
+                            type_name: #type_name,
+                        }
+                    });
+                    // runtime wrapper: deserialize whole params into T
+                    let var_ident = format_ident!("{}", param_name);
+                    let inner_ty_tokens = quote! { #inner_type };
+                    arg_prepare_tokens.push(quote! {
+                        let #var_ident: #inner_ty_tokens = match serde_json::from_value(params.clone()) {
+                            Ok(v) => v,
+                            Err(e) => return Err(::forge_core::error::Error::SerdeJson(e)),
+                        };
+                        let #var_ident = axum::extract::Query::<#inner_ty_tokens>(#var_ident);
+                    });
+                    call_args_tokens.push(quote! { #var_ident });
+                }
+            } else if let Some(inner_type) = get_inner_type(&pat_type.ty, "Json") {
+                let type_name = type_to_string(inner_type);
+                request_body_token = quote! {
+                    Some(&::forge_core::ApiRequestBody {
+                        description: "", // TODO: Parse from attributes
+                        required: true,
+                        type_name: #type_name,
+                    })
+                };
+                // runtime wrapper: deserialize whole params into body T
+                let inner_ty_tokens = quote! { #inner_type };
+                let json_ident = syn::Ident::new("__json_body", proc_macro2::Span::call_site());
+                arg_prepare_tokens.push(quote! {
+                    let #json_ident: #inner_ty_tokens = match serde_json::from_value(params.clone()) {
+                        Ok(v) => v,
+                        Err(e) => return Err(::forge_core::error::Error::SerdeJson(e)),
+                    };
+                    let #json_ident = axum::Json::<#inner_ty_tokens>(#json_ident);
+                });
+                call_args_tokens.push(quote! { #json_ident });
             }
         }
     }
-    let params_tokens = if utoipa_params.is_empty() {
-        quote! {}
-    } else {
-        quote! { params( #(#utoipa_params),* ), }
-    };
-    let (status_code, response_body) = if let syn::ReturnType::Type(_, ty) = &item.sig.output {
-        if let Some(inner_type) = get_inner_type_from_impl_trait(ty, "IntoResponse") {
-             if let Some(json_inner) = get_inner_type(inner_type, "Json") {
-                 (quote! { 200 }, quote! { body = #json_inner })
-             } else {
-                 (quote! { 200 }, quote! { body = String, description = "Generic response" })
-             }
-        } else if let Some(inner_type) = get_inner_type(ty, "Json") {
-            (quote! { 200 }, quote! { body = #inner_type })
-        } else {
-            (quote! { 200 }, quote! { body = String, description = "Plain text response" })
-        }
-    } else {
-        (quote! { 204 }, quote! { description = "No Content" })
-    };
-    let utoipa_path_gen = quote! {
-        #[utoipa::path(
-            #http_method,
-            path = #path_str,
-            operation_id = #operation_id,
-            tag = "App",
-            #params_tokens
-            responses(
-                (status = #status_code, description = #summary, #response_body)
-            ),
-        )]
-    };
-    let ctor_fn_name = Ident::new(
-        &format!("__register_{}", fn_name.to_string()),
-        fn_name.span(),
-    );
 
+    // --- Parse Responses ---
+    let mut responses_tokens = Vec::new();
+    if let ReturnType::Type(_, ty) = &item_fn.sig.output {
+        if let Some(inner_type) = get_inner_type(ty, "Json") {
+            let type_name = type_to_string(inner_type);
+            responses_tokens.push(quote! {
+                ::forge_core::ApiResponse {
+                    status_code: 200,
+                    description: #summary,
+                    type_name: Some(#type_name),
+                }
+            });
+        }
+    }
+    // Add a default response if none was parsed
+    if responses_tokens.is_empty() {
+        responses_tokens.push(quote! {
+            ::forge_core::ApiResponse { status_code: 200, description: "Success", type_name: None }
+        });
+    }
+
+    // --- Generate Static Metadata ---
+    let params_ident = format_ident!("__API_PARAMS_{}", fn_name_str.to_uppercase());
+    let responses_ident = format_ident!("__API_RESPONSES_{}", fn_name_str.to_uppercase());
+    let request_body_ident = format_ident!("__API_REQ_BODY_{}", fn_name_str.to_uppercase());
+
+    let exec_fn_ident = format_ident!("__API_EXEC_{}", fn_name_str.to_uppercase());
+
+    let static_metadata = quote! {
+        #[allow(non_upper_case_globals)]
+        const #params_ident: &[::forge_core::ApiParameter] = &[#(#params_tokens),*];
+        #[allow(non_upper_case_globals)]
+        const #responses_ident: &[::forge_core::ApiResponse] = &[#(#responses_tokens),*];
+        #[allow(non_upper_case_globals)]
+        const #request_body_ident: Option<&'static ::forge_core::ApiRequestBody> = #request_body_token;
+
+        ::forge_core::inventory::submit! {
+            ::forge_core::ApiMetadata {
+                operation_id: #fn_name_str,
+                method: #method_str,
+                path: #path_str,
+                summary: #summary,
+                description: #description,
+                parameters: #params_ident,
+                request_body: #request_body_ident,
+                responses: #responses_ident,
+            }
+        }
+
+        // Static handler function for REST/MCP routers
+        fn #exec_fn_ident(__params_ref: &serde_json::Value) -> ::forge_core::handler::DynHandlerFuture {
+            let __params_json = __params_ref.clone();
+            Box::pin(async move {
+                let params = __params_json.clone();
+                #(#arg_prepare_tokens)*
+                let __resp = #fn_ident(#(#call_args_tokens),*).await;
+                let __resp = ::axum::response::IntoResponse::into_response(__resp);
+                Ok(__resp)
+            })
+        }
+
+        // Register executable handler
+        ::forge_core::inventory::submit! {
+            ::forge_core::handler::ApiHandlerInventory {
+                operation_id: #fn_name_str,
+                handler: #exec_fn_ident,
+            }
+        }
+    };
+
+    // --- Final Output ---
     let output = quote! {
-        #utoipa_path_gen
-        #item
-
-        #[::ctor::ctor]
-        fn #ctor_fn_name() {
-            let handler = ::forge_core::handler::ApiMethodHandler {
-                operation_id: #operation_id,
-                handler: std::sync::Arc::new(|params: &::serde_json::Value| Box::pin(#handler_logic)),
-            };
-            ::forge_core::handler::register_handler(handler);
-        }
+        #static_metadata
+        #item_fn
     };
 
     output.into()
 }
 
-/// Generates the token stream for extracting function parameters from a `serde_json::Value`.
-fn generate_param_extraction_logic(item: &ItemFn) -> (proc_macro2::TokenStream, Vec<proc_macro2::TokenStream>) {
-    let mut declarations = Vec::new();
-    let mut call_args = Vec::new();
-
-    for arg in &item.sig.inputs {
-        if let syn::FnArg::Typed(pat_type) = arg {
-            let param_pat = &pat_type.pat;
-            let param_type = &pat_type.ty;
-
-            let (declaration, call_arg) =
-                if let Some(_inner_type) = get_inner_type(param_type, "Path") {
-                    if let Pat::TupleStruct(pat_tuple) = &**param_pat {
-                        if pat_tuple.path.is_ident("Path") {
-                             if let Some(Pat::Ident(inner_pat)) = pat_tuple.elems.first() {
-                                let param_name = &inner_pat.ident;
-                                let param_name_str = param_name.to_string();
-                                (
-                                    quote! {
-                                        let #param_name = serde_json::from_value(
-                                            params.get(#param_name_str)
-                                                .cloned()
-                                                .unwrap_or(serde_json::Value::Null)
-                                        ).expect("Failed to deserialize Path parameter");
-                                    },
-                                    quote! { axum::extract::Path(#param_name) },
-                                )
-                            } else {
-                                (quote!{}, quote!{unimplemented!("Unsupported Path pattern")})
-                            }
-                        } else {
-                            (quote!{}, quote!{unimplemented!("Unsupported tuple struct pattern")})
-                        }
-                    } else {
-                       (quote!{}, quote!{unimplemented!("Path must be a tuple struct pattern like Path(id)")})
-                    }
-                } else if let Some(_inner_type) = get_inner_type(param_type, "Query") {
-                    let temp_query_var = quote::format_ident!("__query_params");
-                    (
-                        quote! {
-                            let #temp_query_var = serde_json::from_value(params.clone())
-                                .expect("Failed to deserialize Query parameters");
-                        },
-                        quote! { axum::extract::Query(#temp_query_var) },
-                    )
-                } else {
-                    (quote! { /* Unsupported parameter type */ }, quote! { unimplemented!() })
-                };
-
-            declarations.push(declaration);
-            call_args.push(call_arg);
-        }
-    }
-    (quote! { #(#declarations)* }, call_args)
+fn type_to_string(ty: &Type) -> String {
+    quote!(#ty).to_string().replace(' ', "")
 }
 
-// ... (parse_doc_comments, get_inner_type, etc. remain the same)
+fn get_inner_type<'a>(ty: &'a Type, type_name: &str) -> Option<&'a Type> {
+    if let Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            if segment.ident == type_name {
+                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                    if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
+                        return Some(inner);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 fn parse_doc_comments(attrs: &[Attribute]) -> (String, String) {
     let doc_comments: Vec<String> = attrs
         .iter()
@@ -212,41 +269,6 @@ fn parse_doc_comments(attrs: &[Attribute]) -> (String, String) {
     let description = doc_comments.join("\n");
     let summary = description.lines().next().unwrap_or("").to_string();
     (summary, description)
-}
-
-fn get_inner_type<'a>(ty: &'a Type, type_name: &str) -> Option<&'a Type> {
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            if segment.ident == type_name {
-                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
-                    if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
-                        return Some(inner);
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-fn get_inner_type_from_impl_trait<'a>(
-    ty: &'a Type,
-    trait_name: &str,
-) -> Option<&'a Type> {
-    if let syn::Type::ImplTrait(type_impl_trait) = ty {
-        if let Some(syn::TypeParamBound::Trait(trait_bound)) = type_impl_trait.bounds.first() {
-            if let Some(segment) = trait_bound.path.segments.last() {
-                if segment.ident == trait_name {
-                    if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
-                        if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
-                            return Some(inner);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    None
 }
 
 // --- `api_dto` and its helpers ---
@@ -281,6 +303,9 @@ pub fn api_dto(attr: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(attr as ApiDtoArgs);
     let mut input = parse_macro_input!(item as syn::DeriveInput);
     
+    let type_name = input.ident.clone();
+    let type_name_str = type_name.to_string();
+
     let rename_all_strategy = args.rename_all.unwrap_or_else(|| "camelCase".to_string());
 
     let attributes_to_add = quote! {
@@ -289,7 +314,7 @@ pub fn api_dto(attr: TokenStream, item: TokenStream) -> TokenStream {
             Clone,
             serde::Serialize,
             serde::Deserialize,
-            utoipa::ToSchema
+            ::forge_core::utoipa::ToSchema
         )]
         #[serde(rename_all = #rename_all_strategy)]
     };
@@ -313,8 +338,24 @@ pub fn api_dto(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     }
 
+    // 注册 DTO schema 到 inventory
+    let registration = quote! {
+        ::forge_core::inventory::submit! {
+            ::forge_core::ApiDtoMetadata {
+                name: #type_name_str,
+                schema_provider: || {
+                    (
+                        #type_name_str.to_string(),
+                        <#type_name as ::forge_core::utoipa::PartialSchema>::schema(),
+                    )
+                },
+            }
+        }
+    };
+
     let output = quote! {
         #input
+        #registration
     };
 
     output.into()

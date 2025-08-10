@@ -1,151 +1,257 @@
-use axum::extract::{FromRequestParts, Path};
-use axum::response::IntoResponse;
-use axum::{routing::any, Router, extract::Request};
-use forge_core::handler::get_api_handlers;
-use forge_core::openapi_to_mcp::OpenApiMcpRouterBuilder;
+use axum::Router;
+use forge_core::{
+    ApiDtoMetadata, ApiMetadata, inventory, utoipa::{self, OpenApi},
+};
 use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpService,
 };
 use rust_embed::RustEmbed;
+use std::{collections::HashMap, sync::Arc};
 use tower_http::cors::{Any, CorsLayer};
-use utoipa::openapi::OpenApi;
+use utoipa::openapi::{
+    self, ComponentsBuilder, path::{OperationBuilder, PathItemBuilder, ParameterBuilder, ParameterIn}, Schema, Required,
+};
 use utoipa_swagger_ui::SwaggerUi;
 use axum_embed::ServeEmbed;
-use axum::body::Body;
-use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
-use utoipa::openapi::path::HttpMethod;
 
-mod dtos;
-mod handlers;
+// We need to bring the handlers module into scope for the linker to pick up the inventory registrations.
+// use crate::handlers; // This is now incorrect, we use the library.
+
+// mod dtos; // No longer needed, it's in lib.rs
+// mod handlers; // No longer needed, it's in lib.rs
 mod mcp_server;
 
 #[derive(RustEmbed, Clone)]
 #[folder = "../../service_kit/frontend-wasm-cli/"]
 struct Assets;
 
-/// The main builder for the entire API service.
-/// It dynamically constructs the REST router, MCP router, and OpenAPI specification.
-pub struct ApiRouterBuilder {
-    openapi: OpenApi,
-}
+fn build_openapi_spec() -> utoipa::openapi::OpenApi {
+    let mut openapi = utoipa::openapi::OpenApiBuilder::new()
+        .info(
+            utoipa::openapi::InfoBuilder::new()
+                .title("Product Service API")
+                .version("0.1.0")
+                .description(Some("All endpoints for the product service."))
+                .build(),
+        )
+        .paths(utoipa::openapi::Paths::new())
+        .build();
 
-impl ApiRouterBuilder {
-    /// Creates a new builder, initializing it with a base OpenAPI document.
-    pub fn new() -> Self {
-        // Create a base OpenAPI doc. In a real scenario, this could come from a file.
-        let mut openapi = OpenApi::default();
-        openapi.info = utoipa::openapi::InfoBuilder::new()
-            .title("Product Service API")
-            .version("0.1.0")
-            .build();
-        openapi.servers = Some(vec![utoipa::openapi::ServerBuilder::new()
-            .url("/api")
-            .build()]);
-        Self { openapi }
-    }
+    // 1. Collect all DTO schemas into a HashMap for easy lookup.
+    let mut schemas: HashMap<String, openapi::RefOr<Schema>> = inventory::iter::<ApiDtoMetadata>
+        .into_iter()
+        .map(|dto| (dto.schema_provider)())
+        .collect();
 
-    /// Discovers all `#[api]` annotated handlers and builds the final `Router`.
-    pub fn discover_apis(mut self) -> Result<Router, forge_core::error::Error> {
-        println!("[discover_apis] Starting discovery...");
-        let mut rest_router = Router::new();
+    // Built-in primitive schemas for common Rust primitives used in Path/Query
+    use utoipa::openapi::schema::{ObjectBuilder, Type};
+    let string_schema = openapi::RefOr::T(Schema::Object(ObjectBuilder::new().schema_type(Type::String).build()));
+    let integer_schema = openapi::RefOr::T(Schema::Object(ObjectBuilder::new().schema_type(Type::Integer).build()));
+    let number_schema = openapi::RefOr::T(Schema::Object(ObjectBuilder::new().schema_type(Type::Number).build()));
+    let boolean_schema = openapi::RefOr::T(Schema::Object(ObjectBuilder::new().schema_type(Type::Boolean).build()));
+    schemas.entry("String".into()).or_insert(string_schema.clone());
+    schemas.entry("&str".into()).or_insert(string_schema.clone());
+    schemas.entry("i32".into()).or_insert(integer_schema.clone());
+    schemas.entry("i64".into()).or_insert(integer_schema.clone());
+    schemas.entry("u32".into()).or_insert(integer_schema.clone());
+    schemas.entry("u64".into()).or_insert(integer_schema.clone());
+    schemas.entry("f32".into()).or_insert(number_schema.clone());
+    schemas.entry("f64".into()).or_insert(number_schema.clone());
+    schemas.entry("bool".into()).or_insert(boolean_schema.clone());
 
-        {
-            let handlers = get_api_handlers();
-            let handlers_lock = handlers.lock().expect("Failed to lock handlers");
-            println!(
-                "[discover_apis] Locked handlers, found {} handlers.",
-                handlers_lock.len()
-            );
+    // 2. Build paths and operations, looking up schemas from the HashMap.
+    for metadata in inventory::iter::<ApiMetadata> {
+        let mut operation_builder = OperationBuilder::new()
+            .operation_id(Some(metadata.operation_id.to_string()))
+            .summary(Some(metadata.summary.to_string()))
+            .description(Some(metadata.description.to_string()))
+            .tag("App");
 
-            // This loop is the heart of the dynamic router.
-            for (_operation_id, handler_info) in handlers_lock.iter() {
-                println!(
-                    "[discover_apis] Processing handler: {}",
-                    handler_info.operation_id
-                );
-                // 1. Build REST route
-                let rest_handler = handler_info.handler.clone();
-                let route_handler = move |req: Request<Body>| async move {
-                    let (mut parts, _body) = req.into_parts();
-                    let path_params: Path<String> =
-                        Path::from_request_parts(&mut parts, &()).await.unwrap();
-                    let params = serde_json::json!({ "id": path_params.0 });
-                    rest_handler(&params)
-                        .await
-                        .unwrap_or_else(|e| e.into_response())
-                };
+        // Add parameters
+        for param in metadata.parameters {
+            let schema_ref = schemas
+                .get(param.type_name)
+                .cloned()
+                .unwrap_or_else(|| openapi::RefOr::T(Schema::default()));
 
-                // This is still manual, a real implementation would get this from the handler_info
-                let path = "/v1/products/{id}";
-                rest_router = rest_router.route(path, any(route_handler));
-
-                // In a full implementation, the openapi PathItem would be built here
-                // and added to `self.openapi`.
-                let mut operation = utoipa::openapi::path::OperationBuilder::new()
-                    .operation_id(Some(handler_info.operation_id.to_string()))
-                    .description(Some("A dynamically added operation"))
-                    .build();
-                let param = utoipa::openapi::path::ParameterBuilder::new()
-                    .name("id")
-                    .parameter_in(utoipa::openapi::path::ParameterIn::Path)
-                    .required(utoipa::openapi::Required::True)
-                    .schema(Some(utoipa::openapi::RefOr::T(utoipa::openapi::Schema::from(
-                        ObjectBuilder::new().schema_type(SchemaType::Type(Type::String)),
-                    ))))
-                    .build();
-                operation.parameters = Some(vec![param.into()]);
-
-                let path_item = utoipa::openapi::path::PathItemBuilder::new()
-                    .operation(HttpMethod::Get, operation)
-                    .build();
-
-                self.openapi.paths.paths.insert(path.to_string(), path_item);
+            match param.param_in {
+                forge_core::ParamIn::Path => {
+                    let built_parameter = ParameterBuilder::new()
+                        .name(param.name)
+                        .required(Required::True)
+                        .description(Some(param.description))
+                        .parameter_in(ParameterIn::Path)
+                        .schema(Some(schema_ref))
+                        .build();
+                    operation_builder = operation_builder.parameter(built_parameter);
+                }
+                forge_core::ParamIn::Query => {
+                    // If the query parameter is an object, expand its properties as individual query parameters
+                    if let openapi::RefOr::T(Schema::Object(obj)) = &schema_ref {
+                        for (prop_name, prop_schema) in obj.properties.iter() {
+                            let is_required = obj.required.iter().any(|r| r == prop_name);
+                            let built_parameter = ParameterBuilder::new()
+                                .name(prop_name)
+                                .required(if is_required { Required::True } else { Required::False })
+                                .description(None::<&str>)
+                                .parameter_in(ParameterIn::Query)
+                                .schema(Some(prop_schema.clone()))
+                                .build();
+                            operation_builder = operation_builder.parameter(built_parameter);
+                        }
+                        // If object has no properties, fall back to single param
+                        if obj.properties.is_empty() {
+                            let built_parameter = ParameterBuilder::new()
+                                .name(param.name)
+                                .required(if param.required { Required::True } else { Required::False })
+                                .description(Some(param.description))
+                                .parameter_in(ParameterIn::Query)
+                                .schema(Some(schema_ref))
+                                .build();
+                            operation_builder = operation_builder.parameter(built_parameter);
+                        }
+                    } else {
+                        // Primitive query parameter
+                        let built_parameter = ParameterBuilder::new()
+                            .name(param.name)
+                            .required(if param.required { Required::True } else { Required::False })
+                            .description(Some(param.description))
+                            .parameter_in(ParameterIn::Query)
+                            .schema(Some(schema_ref))
+                            .build();
+                        operation_builder = operation_builder.parameter(built_parameter);
+                    }
+                }
             }
         }
-        println!("[discover_apis] Finished processing handlers.");
+
+        // Add request body
+        if let Some(req_body_meta) = metadata.request_body {
+            let schema_ref = schemas
+                .get(req_body_meta.type_name)
+                .cloned()
+                .unwrap_or_else(|| openapi::RefOr::T(Schema::default()));
+                
+            let request_body = utoipa::openapi::request_body::RequestBodyBuilder::new()
+                .description(Some(req_body_meta.description))
+                .required(Some(if req_body_meta.required { Required::True } else { Required::False }))
+                .content(
+                    "application/json",
+                    utoipa::openapi::ContentBuilder::new()
+                        .schema(Some(schema_ref))
+                        .build(),
+                )
+                .build();
+            operation_builder = operation_builder.request_body(Some(request_body));
+        }
+
+        // Add responses
+        let mut responses_builder = utoipa::openapi::ResponsesBuilder::new();
+        for resp in metadata.responses {
+            let mut response_builder = utoipa::openapi::ResponseBuilder::new()
+                .description(resp.description);
+            
+            if let Some(type_name) = resp.type_name {
+                 if let Some(schema_ref) = schemas.get(type_name) {
+                    response_builder = response_builder.content(
+                        "application/json",
+                        utoipa::openapi::ContentBuilder::new().schema(Some(schema_ref.clone())).build()
+                    );
+                 }
+            }
+            
+            responses_builder = responses_builder.response(resp.status_code.to_string(), response_builder.build());
+        }
+        operation_builder = operation_builder.responses(responses_builder.build());
+
+        let http_method = match metadata.method.to_lowercase().as_str() {
+            "get" => utoipa::openapi::path::HttpMethod::Get,
+            "post" => utoipa::openapi::path::HttpMethod::Post,
+            "put" => utoipa::openapi::path::HttpMethod::Put,
+            "delete" => utoipa::openapi::path::HttpMethod::Delete,
+            "patch" => utoipa::openapi::path::HttpMethod::Patch,
+            "options" => utoipa::openapi::path::HttpMethod::Options,
+            "head" => utoipa::openapi::path::HttpMethod::Head,
+            "trace" => utoipa::openapi::path::HttpMethod::Trace,
+            _ => continue, // Or handle error appropriately
+        };
+
+        let operation = operation_builder.build();
+        let path_item = openapi
+            .paths
+            .paths
+            .entry(metadata.path.to_string())
+            .or_default();
         
-        // This part remains the same: build MCP router from the spec.
-        println!("[discover_apis] Building MCP tool router...");
-        let mcp_tool_router = OpenApiMcpRouterBuilder::new()
-            .openapi(self.openapi.clone()) // Pass a clone of the spec
-            .build()?;
-        println!("[discover_apis] MCP tool router built successfully.");
-
-        let mcp_server = mcp_server::McpServerImpl::new(mcp_tool_router);
-        println!("[discover_apis] Creating MCP service...");
-        let mcp_service = StreamableHttpService::new(
-            move || Ok(mcp_server.clone()),
-            LocalSessionManager::default().into(),
-            Default::default(),
-        );
-        println!("[discover_apis] MCP service created.");
-
-        let assets_router = Router::new().nest_service("/cli-ui", ServeEmbed::<Assets>::new());
-        let swagger_ui = SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", self.openapi);
-
-        let final_router = Router::new()
-            .merge(rest_router)
-            .merge(swagger_ui)
-            .nest_service("/mcp", mcp_service)
-            .merge(assets_router)
-            .layer(
-                CorsLayer::new()
-                    .allow_origin(Any)
-                    .allow_methods(Any)
-                    .allow_headers(Any),
-            );
-
-        println!("[discover_apis] Discovery finished, returning router.");
-        Ok(final_router)
+        match http_method {
+            utoipa::openapi::path::HttpMethod::Get => path_item.get = Some(operation),
+            utoipa::openapi::path::HttpMethod::Post => path_item.post = Some(operation),
+            utoipa::openapi::path::HttpMethod::Put => path_item.put = Some(operation),
+            utoipa::openapi::path::HttpMethod::Delete => path_item.delete = Some(operation),
+            utoipa::openapi::path::HttpMethod::Options => path_item.options = Some(operation),
+            utoipa::openapi::path::HttpMethod::Head => path_item.head = Some(operation),
+            utoipa::openapi::path::HttpMethod::Patch => path_item.patch = Some(operation),
+            utoipa::openapi::path::HttpMethod::Trace => path_item.trace = Some(operation),
+        }
     }
-}
 
+    // 3. Add all collected schemas to the components section.
+    let components = ComponentsBuilder::new()
+        .schemas_from_iter(schemas)
+        .build();
+    openapi.components = Some(components);
+
+    openapi
+}
 
 #[tokio::main]
 async fn main() {
-    let app = ApiRouterBuilder::new()
-        .discover_apis()
-        .expect("Failed to build API router");
+    // This function call is a trick to ensure the linker
+    // doesn't optimize away the handlers module, which contains
+    // the inventory::submit! calls for our API endpoints.
+    product_service::handlers::load();
+    
+    let openapi = Arc::new(build_openapi_spec());
+
+    // Utility: print OpenAPI and exit if env is set
+    if std::env::var("PRINT_OPENAPI").is_ok() {
+        println!("{}", openapi.to_pretty_json().unwrap_or_else(|_| "{}".to_string()));
+        return;
+    }
+
+    // --- Build REST Router ---
+    let rest_router = forge_core::rest_router_builder::RestRouterBuilder::new()
+        .openapi((*openapi).clone())
+        .build()
+        .expect("Failed to build REST router");
+
+    // --- Build MCP Router ---
+    let mcp_tool_router = forge_core::openapi_to_mcp::OpenApiMcpRouterBuilder::new()
+        .openapi((*openapi).clone())
+        .build()
+        .expect("Failed to build MCP router");
+    
+    let mcp_server = mcp_server::McpServerImpl::new(mcp_tool_router);
+    let mcp_service = StreamableHttpService::new(
+        move || Ok(mcp_server.clone()),
+        LocalSessionManager::default().into(),
+        Default::default(),
+    );
+
+    // --- Combine all routers ---
+    let assets_router = Router::new().nest_service("/cli-ui", ServeEmbed::<Assets>::new());
+    let swagger_ui = SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", (*openapi).clone());
+
+    let app = rest_router
+        .merge(swagger_ui)
+        .nest_service("/mcp", mcp_service)
+        .merge(assets_router)
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any),
+        );
 
     println!("🚀 Server running at http://127.0.0.1:3000");
     println!("📚 Swagger UI available at http://127.0.0.1:3000/swagger-ui");

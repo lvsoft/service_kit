@@ -3,17 +3,88 @@
 // SPDX-License-Identifier: MIT
 
 use crate::error::{Error, Result};
-use crate::handler::get_api_handlers;
+use crate::handler::ApiHandlerInventory;
 use axum::{
     body::Body,
-    extract::{FromRequest, Path},
-    response::IntoResponse,
+    extract::{FromRequestParts, Path},
+    response::{IntoResponse, Response},
     routing::{on, MethodFilter},
     Router,
 };
 use axum::http::Request;
+use serde_json::Value;
 use std::collections::HashMap;
 use utoipa::openapi::{OpenApi, PathItem};
+
+
+/// Extracts all possible parameters from a request and merges them into a single serde_json::Value.
+///
+/// This function handles:
+/// 1. Path parameters (e.g., /users/:id)
+/// 2. Query parameters (e.g., /users?role=admin)
+/// 3. JSON body (for POST, PUT, PATCH requests)
+///
+/// They are merged into a single JSON object, with JSON body fields taking precedence
+/// in case of name collisions.
+async fn extract_and_merge_params(req: Request<Body>) -> std::result::Result<Value, Response> {
+    let (mut parts, body) = req.into_parts();
+
+    // 1. Extract Path parameters
+    let path_params: HashMap<String, String> =
+        match Path::<HashMap<String, String>>::from_request_parts(&mut parts, &()).await {
+            Ok(path) => path.0,
+            Err(e) => return Err(e.into_response()),
+        };
+    let mut merged_params = serde_json::to_value(path_params)
+        .unwrap_or_else(|_| Value::Object(Default::default()));
+
+    // 2. Extract Query parameters
+    if let Some(query_str) = parts.uri.query() {
+        // Parse as simple key=value pairs to avoid unexpected shapes with Value
+        if let Ok(pairs) = serde_urlencoded::from_str::<Vec<(String, String)>>(query_str) {
+            if let Some(merged) = merged_params.as_object_mut() {
+                for (k, v) in pairs {
+                    // Best-effort type inference: number, bool, else string
+                    if let Ok(n) = v.parse::<f64>() {
+                        merged.insert(k, serde_json::json!(n));
+                    } else if v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("false") {
+                        merged.insert(k, serde_json::json!(v.eq_ignore_ascii_case("true")));
+                    } else {
+                        merged.insert(k, Value::String(v));
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Extract JSON Body (if applicable)
+    let headers = parts.headers.clone();
+    if let Some(content_type) = headers.get(axum::http::header::CONTENT_TYPE) {
+        if content_type.to_str().unwrap_or("").contains("application/json") {
+            let body_bytes = match axum::body::to_bytes(body, usize::MAX).await {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    return Err((
+                        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Failed to read request body: {}", e),
+                    )
+                        .into_response())
+                }
+            };
+
+            if let Ok(body_json) = serde_json::from_slice::<Value>(&body_bytes) {
+                 if let (Some(merged), Some(body_obj)) = (merged_params.as_object_mut(), body_json.as_object()) {
+                    for (k, v) in body_obj {
+                        merged.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(merged_params)
+}
+
 
 /// A builder that creates an `axum::Router` for REST APIs from an OpenAPI document.
 #[derive(Default, Clone)]
@@ -41,35 +112,31 @@ impl RestRouterBuilder {
         let openapi = self.openapi.ok_or_else(|| {
             Error::SpecError("OpenAPI document not provided".to_string())
         })?;
-        let handlers = get_api_handlers();
-        let handlers_lock = handlers.lock().expect("Failed to lock handlers");
+        // Build a lookup map from inventory-registered handlers
+        let mut handler_map: std::collections::HashMap<&'static str, fn(&serde_json::Value) -> crate::handler::DynHandlerFuture> = std::collections::HashMap::new();
+        for inv in inventory::iter::<ApiHandlerInventory> {
+            handler_map.insert(inv.operation_id, inv.handler);
+        }
 
         let mut router = Router::new();
 
         for (path, path_item) in openapi.paths.paths.iter() {
             for (method, operation) in operations_from_path_item(path_item) {
                 if let Some(op_id) = operation.operation_id.as_deref() {
-                    if let Some(handler_info) = handlers_lock.get(op_id) {
-                        let handler = handler_info.handler.clone();
+                    if let Some(handler_fn) = handler_map.get(op_id) {
+                        let handler_fn = *handler_fn;
                         let route_handler = move |req: Request<Body>| async move {
-                            // This is a simplified parameter extraction logic.
-                            // It assumes path parameters are the primary input.
-                            let path_params: HashMap<String, String> =
-                                Path::from_request(req, &())
-                                    .await
-                                    .map(|path: Path<HashMap<String, String>>| path.0)
-                                    .unwrap_or_default();
-
-                            let params = serde_json::to_value(path_params)
-                                .unwrap_or(serde_json::Value::Null);
-
-                            handler(&params)
-                                .await
-                                .unwrap_or_else(|e| e.into_response())
+                            match extract_and_merge_params(req).await {
+                                Ok(params) => match handler_fn(&params).await {
+                                    Ok(resp) => resp,
+                                    Err(e) => e.into_response(),
+                                },
+                                Err(response) => response,
+                            }
                         };
 
-                        // Axum path parameters use `:name` syntax.
-                        let axum_path = path.replace('{', ":").replace('}', "");
+                        // Axum v0.8 uses `{name}` syntax which matches OpenAPI
+                        let axum_path = path.clone();
                         router = router.route(&axum_path, on(method, route_handler));
                     }
                 }

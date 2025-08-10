@@ -1,27 +1,16 @@
-use anyhow::Result;
 use rmcp::{
-    ServiceExt,
     model::{CallToolRequestParam, ClientCapabilities, ClientInfo, Implementation},
     transport::StreamableHttpClientTransport,
+    ServiceExt,
 };
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| format!("info,{}=debug", env!("CARGO_CRATE_NAME")).into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
-
+async fn main() {
     println!("🚀 Starting MCP Client to test product-service...");
-    
+
     // Connect to our product-service MCP endpoint
     let transport = StreamableHttpClientTransport::from_uri("http://127.0.0.1:3000/mcp");
-    
+
     let client_info = ClientInfo {
         protocol_version: Default::default(),
         capabilities: ClientCapabilities::default(),
@@ -32,62 +21,59 @@ async fn main() -> Result<()> {
     };
 
     println!("📡 Connecting to MCP server at http://127.0.0.1:3000/mcp...");
-    let client = client_info.serve(transport).await.inspect_err(|e| {
-        tracing::error!("client connection error: {:?}", e);
-    })?;
+    let Ok(client) = client_info.serve(transport).await else {
+        eprintln!("❌ Failed to connect to MCP server");
+        return;
+    };
 
-    // Get server info
-    let server_info = client.peer_info();
-    println!("✅ Connected to server: {:#?}", server_info);
+    println!("✅ Connected. Peer info: {:#?}", client.peer_info());
 
-    // List available tools
     println!("\n📋 Listing available tools...");
-    let tools = client.list_tools(Default::default()).await?;
-    println!("Available tools: {:#?}", tools);
+    let tool_list = match client.list_tools(Default::default()).await {
+        Ok(tools) => { println!("Available tools: {:#?}", tools); tools }
+        Err(e) => { eprintln!("❌ list_tools failed: {}", e); return; }
+    };
 
-    // Test increment tool
-    println!("\n🔧 Testing increment tool...");
-    let increment_result = client
-        .call_tool(CallToolRequestParam {
-            name: "increment".into(),
-            arguments: serde_json::json!({}).as_object().cloned(),
-        })
-        .await?;
-    println!("Increment result: {:#?}", increment_result);
+    // Prefer operation_id tool names: "add", "get_product"
+    let mut has_add = false;
+    let mut has_get_product = false;
+    for t in &tool_list.tools {
+        let name = &t.name;
+        if name == "add" { has_add = true; }
+        if name == "get_product" { has_get_product = true; }
+    }
 
-    // Test get tool
-    println!("\n📊 Testing get tool...");
-    let get_result = client
-        .call_tool(CallToolRequestParam {
-            name: "get".into(),
-            arguments: serde_json::json!({}).as_object().cloned(),
-        })
-        .await?;
-    println!("Get result: {:#?}", get_result);
+    if has_add {
+        println!("\n🔧 Call tool: add");
+        match client
+            .call_tool(CallToolRequestParam {
+                name: "add".into(),
+                arguments: serde_json::json!({ "a": 1.0, "b": 2.0 }).as_object().cloned(),
+            })
+            .await
+        {
+            Ok(res) => println!("add result: {:#?}", res),
+            Err(e) => eprintln!("❌ call add failed: {}", e),
+        }
+    } else {
+        eprintln!("⚠️ tool 'add' not found in server tool list");
+    }
 
-    // Test increment again to see counter change
-    println!("\n🔧 Testing increment tool again...");
-    let increment_result2 = client
-        .call_tool(CallToolRequestParam {
-            name: "increment".into(),
-            arguments: serde_json::json!({}).as_object().cloned(),
-        })
-        .await?;
-    println!("Increment result 2: {:#?}", increment_result2);
+    if has_get_product {
+        println!("\n🔧 Call tool: get_product");
+        match client
+            .call_tool(CallToolRequestParam {
+                name: "get_product".into(),
+                arguments: serde_json::json!({ "id": "1" }).as_object().cloned(),
+            })
+            .await
+        {
+            Ok(res) => println!("get_product result: {:#?}", res),
+            Err(e) => eprintln!("❌ call get_product failed: {}", e),
+        }
+    } else {
+        eprintln!("⚠️ tool 'get_product' not found in server tool list");
+    }
 
-    // Get final value
-    println!("\n📊 Getting final counter value...");
-    let final_get_result = client
-        .call_tool(CallToolRequestParam {
-            name: "get".into(),
-            arguments: serde_json::json!({}).as_object().cloned(),
-        })
-        .await?;
-    println!("Final get result: {:#?}", final_get_result);
-
-    // Clean up
-    client.cancel().await?;
-    println!("\n✅ MCP Client test completed successfully!");
-
-    Ok(())
+    println!("\n✅ MCP Client test completed.");
 }

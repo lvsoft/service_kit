@@ -1,9 +1,10 @@
 [workspace]
 members = [
-    "examples/product-service",
     "service_kit",
-    "service_kit/forge-core",
+    "examples/product-service",
     "service_kit/forge-cli-wasm",
-    "service_kit/service-kit-macros",
 ]
 resolver = "2"
+
+[workspace.package]
+edition = "2021"

@@ -2,45 +2,29 @@
 name = "product-service"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [dependencies]
-service_kit = { path = "../../service_kit" }
-forge-core = { path = "../../service_kit/forge-core" }
-service-kit-macros = { path = "../../service_kit/service-kit-macros" }
-
-# Web framework
 axum = "0.8"
 tokio = { version = "1.0", features = ["full"] }
-
-# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-
-# OpenAPI & Schema
-utoipa = { version = "5.4", features = ["axum_extras", "openapi_extensions"] }
+utoipa = { version = "5.4.0", features = ["axum_extras", "macros"] }
 utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
-
-# Runtime Registration
-ctor = "0.2.7"
-
-# Asset Embedding
-rust-embed = "8.0"
-axum-embed = "0.1.0"
 tower-http = { version = "0.6.6", features = ["cors"] }
-rmcp = { version = "0.4.0", features = [
-    "server", 
+rmcp = { version = "0.5.0", features = [
     "client",
-    "macros",
+    "reqwest",
     "transport-streamable-http-server",
     "transport-streamable-http-client",
-    "transport-worker",
-    "reqwest"
+    "transport-worker"
 ] }
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+anyhow = "1"
+rust-embed = "8.6.0"
+axum-embed = "0.1.0"
+service-kit-macros = { path = "../../service_kit/service-kit-macros" }
+forge-core = { path = "../../service_kit/forge-core" }
 
-# For MCP client
-anyhow = "1.0"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-[package.metadata.service_kit]
-ts_output_dir = "frontend/src/generated/types/"
+[features]
+default = []

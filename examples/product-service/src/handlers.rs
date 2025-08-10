@@ -1,6 +1,6 @@
-use axum::{extract::Path, Json, response::IntoResponse};
+use axum::{extract::{Path, Query}, Json, response::IntoResponse};
 use service_kit_macros::api;
-use crate::dtos::Product;
+use crate::dtos::{AddParams, Product, ProductUpdate};
 
 /// Get a product by its ID
 ///
@@ -20,6 +20,67 @@ pub async fn get_product(Path(id): Path<String>) -> impl IntoResponse {
         },
     };
     Json(sample_product)
+}
+
+/// Add two numbers
+/// This endpoint is a simple calculator to add two numbers.
+#[api(GET, "/v1/add")]
+pub async fn add(Query(params): Query<AddParams>) -> Json<f64> {
+    Json(params.a + params.b)
+}
+
+/// List all products
+/// This endpoint returns a list of all products in the system.
+#[api(GET, "/v1/products")]
+pub async fn list_products() -> Json<Vec<Product>> {
+    Json(vec![
+        Product {
+            id: "prod-001".to_string(),
+            product_code: "P-12345".to_string(),
+            name: "Example Product 1".to_string(),
+            description: Some("This is product 1.".to_string()),
+            price: 99.99,
+            category: crate::dtos::Category {
+                id: "cat-01".to_string(),
+                name: "Electronics".to_string(),
+                parent: None,
+            },
+        },
+        Product {
+            id: "prod-002".to_string(),
+            product_code: "P-67890".to_string(),
+            name: "Example Product 2".to_string(),
+            description: Some("This is product 2.".to_string()),
+            price: 149.99,
+            category: crate::dtos::Category {
+                id: "cat-02".to_string(),
+                name: "Books".to_string(),
+                parent: None,
+            },
+        },
+    ])
+}
+
+/// Update a product
+/// This endpoint updates a product's information.
+#[api(PATCH, "/v1/products/{id}")]
+pub async fn update_product(
+    Path(id): Path<String>,
+    Json(payload): Json<ProductUpdate>,
+) -> Json<Product> {
+    // In a real implementation, you would fetch the product, update it, and save it.
+    Json(Product {
+        id,
+        product_code: "P-UPDATED".to_string(),
+        name: payload.name.unwrap_or_else(|| "Old Name".to_string()),
+        description: payload.description,
+        price: payload.price.unwrap_or(0.0),
+        category: crate::dtos::Category {
+            id: "cat-01".to_string(),
+            name: "Electronics".to_string(),
+            parent: None,
+        },
+    })
 }
 
 #[cfg(test)]
@@ -67,3 +128,6 @@ mod tests {
         assert!(json_value.get("userId").is_none()); // Check that camelCase was not used
     }
 }
+
+/// A dummy function to ensure the linker includes this module.
+pub fn load() {}

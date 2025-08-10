@@ -1,17 +1,17 @@
-use service_kit::{api_dto, api_params};
+use service_kit_macros::api_dto;
 
 #[api_dto]
 pub struct Greeting {
     pub message: String,
 }
 
-#[api_params]
+#[api_dto]
 pub struct AddParams {
-    pub a: i32,
-    pub b: i32,
+    pub a: f64,
+    pub b: f64,
 }
 
 #[api_dto]
 pub struct AddResponse {
-    pub result: i32,
+    pub result: f64,
 }

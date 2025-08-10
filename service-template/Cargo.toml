@@ -16,11 +16,20 @@ path = "src/main.rs"
 [[bin]]
 name = "api-cli"
 path = "src/bin/api-cli.rs"
-required-features = ["service_kit/api-cli"]
+# The cli feature is not yet compatible with the new architecture.
+# required-features = ["service_kit/api-cli"] 
 
 [dependencies]
-service_kit = { path = "/home/lv/nvm/works/service_kit/service_kit", features = ["api-cli"] }
+# service_kit = { path = "/home/lv/nvm/works/service_kit/service_kit", features = ["api-cli"] }
 anyhow = "1.0"
+
+# --- Service Kit core libraries ---
+forge-core = { path = "/home/lv/nvm/works/service_kit/service_kit/forge-core" }
+service-kit-macros = { path = "/home/lv/nvm/works/service_kit/service_kit/service-kit-macros" }
+rmcp = { version = "0.5.0", features = [
+    "transport-streamable-http-server",
+    "transport-worker"
+] }
 
 # Web framework
 axum = "0.8"
@@ -44,7 +53,7 @@ axum-embed = "0.1.0"
 
 [features]
 default = []
-api-cli = ["service_kit/api-cli"]
+# api-cli = ["service_kit/api-cli"]
 
 # --- For Local Development ---
 # If you are developing `service_kit` locally, uncomment the following lines

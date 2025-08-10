@@ -1,9 +1,9 @@
 use axum::{extract::Query, Json};
 use crate::dtos::{AddParams, AddResponse, Greeting};
-use service_kit::api_route;
+use service_kit_macros::api;
 
 /// Returns a simple greeting.
-#[api_route(get, "/v1/hello")]
+#[api(GET, "/v1/hello")]
 pub async fn hello() -> Json<Greeting> {
     let greeting = Greeting {
         message: "Hello, World!".to_string(),
@@ -12,8 +12,11 @@ pub async fn hello() -> Json<Greeting> {
 }
 
 /// Adds two numbers.
-#[api_route(get, "/v1/add")]
-pub async fn add(Query(params): Query<AddParams>) -> Json<AddResponse> {
+#[api(POST, "/v1/add")]
+pub async fn add(Json(params): Json<AddParams>) -> Json<AddResponse> {
     let result = params.a + params.b;
     Json(AddResponse { result })
 }
+
+/// A dummy function to ensure the linker includes this module.
+pub fn load() {}

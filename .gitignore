@@ -19,3 +19,5 @@ Cargo.lock
 # Service Kit specific
 /examples/**/generated/
 /examples/**/frontend/
+
+ref/
